@@ -1,16 +1,14 @@
 import argparse
 import re
-import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, SYLT, Encoding
 
 
-# ---------------- ID3 读取 ----------------
+# ---------------- 原有：ID3 读取 ----------------
 
 def read_title_tag(mp3_path: Path) -> str:
     try:
@@ -62,46 +60,6 @@ def get_mp3_duration_ms(file_path: Path) -> int:
         sys.exit(1)
 
 
-def get_mp3_audio_params(mp3_path: Path):
-    """返回 (sample_rate, channels)；失败时回退到 (44100, 2)。"""
-    try:
-        audio = MP3(mp3_path)
-        return audio.info.sample_rate, audio.info.channels
-    except Exception:
-        return 44100, 2
-
-
-# ---------------- 静音生成 ----------------
-
-def create_silence_mp3(output_path: Path, duration_s: float,
-                       sample_rate: int, channels: int):
-    """用 anullsrc 生成一个静音 MP3，参数尽量匹配源文件。"""
-    channel_layout = "mono" if channels == 1 else "stereo"
-    base_cmd = [
-        "ffmpeg", "-y",
-        "-f", "lavfi",
-        "-i", f"anullsrc=r={sample_rate}:cl={channel_layout}",
-        "-t", f"{duration_s:.3f}",
-        "-ar", str(sample_rate),
-        "-ac", str(channels),
-    ]
-    # 优先指定 libmp3lame；失败再让 ffmpeg 按扩展名自动选择
-    for extra in (["-c:a", "libmp3lame", "-q:a", "9"], []):
-        cmd = base_cmd + extra + [str(output_path)]
-        try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
-            return
-        except FileNotFoundError:
-            print("错误：找不到 ffmpeg，请先安装并加入 PATH")
-            sys.exit(1)
-        except subprocess.CalledProcessError:
-            continue
-    print("错误：生成静音 MP3 失败，请确认 ffmpeg 支持 MP3 编码（libmp3lame）")
-    sys.exit(1)
-
-
-# ---------------- 元数据 / concat 列表 ----------------
-
 def generate_ffmetadata(chapters, output_path: Path, album_title="合辑"):
     lines = [";FFMETADATA1", f"title={album_title}", ""]
     for title, start, end in chapters:
@@ -119,26 +77,21 @@ def generate_ffmetadata(chapters, output_path: Path, album_title="合辑"):
     output_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def generate_concat_list(mp3_files, output_path: Path, silence_path: Path = None):
-    """生成 concat 列表；若提供 silence_path，则在每两首歌之间插入该静音文件。"""
+def generate_concat_list(mp3_files, output_path: Path):
     def escape(p: Path) -> str:
         return p.as_posix().replace("'", "'\\''")
-
-    lines = []
-    for i, f in enumerate(mp3_files):
-        lines.append(f"file '{escape(f)}'")
-        if silence_path is not None and i < len(mp3_files) - 1:
-            lines.append(f"file '{escape(silence_path)}'")
+    lines = [f"file '{escape(f)}'" for f in mp3_files]
     output_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-# ---------------- 歌词处理 ----------------
+# ---------------- 新增：歌词处理 ----------------
 
 LRC_TIME_RE = re.compile(r"\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]")
 LRC_META_RE = re.compile(r"^\[(ti|ar|al|by|offset|length|re|ve|tool):", re.IGNORECASE)
 
 
 def parse_lrc_file(lrc_path: Path):
+    """解析 LRC 文件，返回 [(text, ms), ...]；解析失败返回 None。"""
     try:
         raw = lrc_path.read_text(encoding="utf-8-sig")
     except UnicodeDecodeError:
@@ -174,6 +127,7 @@ def parse_lrc_file(lrc_path: Path):
                     total_ms += int(frac) * 10
                 else:
                     total_ms += int(frac)
+            # LRC 的 offset 正数通常表示歌词提前显示，这里按“减 offset”处理
             total_ms = max(0, total_ms - offset_ms)
             result.append((text, total_ms))
 
@@ -184,6 +138,7 @@ def parse_lrc_file(lrc_path: Path):
 
 
 def extract_lyrics_from_mp3(mp3_path: Path):
+    """读取 MP3 内嵌的同步歌词 SYLT；返回 [(text, ms), ...] 或 None。"""
     try:
         tags = ID3(mp3_path)
     except Exception:
@@ -210,6 +165,7 @@ def extract_lyrics_from_mp3(mp3_path: Path):
 
 
 def extract_lyrics(mp3_path: Path):
+    """优先读 MP3 内嵌 SYLT，其次读同名 .lrc；都找不到返回 None。"""
     lyrics = extract_lyrics_from_mp3(mp3_path)
     if lyrics:
         return lyrics
@@ -222,6 +178,7 @@ def extract_lyrics(mp3_path: Path):
 
 
 def build_sylt_data(mp3_files, chapters, with_markers=False):
+    """把每首歌的歌词按章节起始时间偏移，拼成一条完整时间轴。"""
     all_data = []
     for mp3_path, (title, start_ms, _end_ms) in zip(mp3_files, chapters):
         lyrics = extract_lyrics(mp3_path)
@@ -237,6 +194,7 @@ def build_sylt_data(mp3_files, chapters, with_markers=False):
 
 
 def write_sylt_to_output(output_path: Path, sylt_data, lang="chi"):
+    """把完整的歌词时间轴写入输出 MP3 的 SYLT 帧。"""
     if not sylt_data:
         print("没有可写入的同步歌词。")
         return
@@ -251,10 +209,10 @@ def write_sylt_to_output(output_path: Path, sylt_data, lang="chi"):
 
     try:
         frame = SYLT(
-            encoding=Encoding.UTF16,
+            encoding=Encoding.UTF16,   # v2.3 兼容性更稳
             lang=lang,
-            format=2,
-            type=1,
+            format=2,                  # 时间戳单位为毫秒
+            type=1,                    # 1 = 歌词
             desc="",
             text=sylt_data,
         )
@@ -270,26 +228,23 @@ def write_sylt_to_output(output_path: Path, sylt_data, lang="chi"):
 def parse_args():
     parser = argparse.ArgumentParser(
         description="把文件夹下的 MP3 按 ID3 元数据中的 # 数字（或音轨号）排序后，"
-                    "合并为一个带章节帧的 MP3；可在相邻曲目间插入静音分隔，"
-                    "并可把每首歌的歌词按章节时间偏移合并成一条 SYLT 同步歌词。",
+                    "合并为一个带章节帧的 MP3，并可选地把每首歌的歌词按章节时间偏移"
+                    "合并成一条 SYLT 同步歌词。",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""示例：
   python merge.py D:\\music 合辑.mp3
   python merge.py ./music ./out/合辑.mp3 --title "我的精选集"
-  python merge.py ./music 合辑.mp3 --gap 0.5 --chapter-markers --lyrics-lang chi
-  python merge.py ./music 合辑.mp3 --gap 0          # 不插入静音
-  python merge.py ./music 合辑.mp3 --no-lyrics      # 不处理歌词
+  python merge.py ./music 合辑.mp3 --chapter-markers --lyrics-lang chi
+  python merge.py ./music 合辑.mp3 --no-lyrics
 """
     )
     parser.add_argument("folder", help="要扫描 MP3 的文件夹路径")
     parser.add_argument("output", help="输出文件名；不带 .mp3 后缀会自动补上")
     parser.add_argument("--title", default="合辑", help="合并后文件的全局标题（默认：合辑）")
-    parser.add_argument("--gap", type=float, default=0.5,
-                        help="相邻曲目之间的静音间隔秒数（默认 0.5；设为 0 则禁用）")
     parser.add_argument("--lyrics-lang", default="chi",
                         help="写入 SYLT 的语言代码（ISO-639-2，默认 chi）")
     parser.add_argument("--chapter-markers", action="store_true",
-                        help="在每章歌词前插入一行章节标题")
+                        help="在每章歌词前插入一行章节标题（便于在歌词中看到分段）")
     parser.add_argument("--no-lyrics", action="store_true",
                         help="跳过歌词处理，只合并音频与章节")
     return parser.parse_args()
@@ -340,75 +295,53 @@ def main():
             source = "无 # / 无音轨号"
         print(f"  {i}. {p.name}  [{source}]  -> 章节名: {chapter_title_of(p)}")
 
-    # ---- 生成间隔静音 ----
-    gap_s = args.gap
-    silence_tmpdir = None
-    silence_path = None
-    gap_ms = 0
-    if gap_s > 0 and len(mp3_files) > 1:
-        sample_rate, channels = get_mp3_audio_params(mp3_files[0])
-        silence_tmpdir = Path(tempfile.mkdtemp(prefix="mp3gap_"))
-        silence_path = silence_tmpdir / "silence.mp3"
-        print(f"\n正在生成 {gap_s}s 静音分隔音频（{sample_rate}Hz / {channels}ch）...")
-        create_silence_mp3(silence_path, gap_s, sample_rate, channels)
-        gap_ms = get_mp3_duration_ms(silence_path)
-        print(f"  静音文件实际时长：{gap_ms} ms（用于章节/歌词时间轴对齐）")
-    elif gap_s > 0:
-        print("\n只有 1 个 MP3 文件，跳过静音分隔。")
+    # 计算章节
+    chapters = []
+    current_start = 0
+    for mp3_path in mp3_files:
+        duration_ms = get_mp3_duration_ms(mp3_path)
+        current_end = current_start + duration_ms
+        chapters.append((chapter_title_of(mp3_path), current_start, current_end))
+        current_start = current_end
 
+    metadata_path = folder / "chapters_temp.ffmeta"
+    concat_list_path = folder / "concat_list_temp.txt"
+    generate_ffmetadata(chapters, metadata_path, args.title)
+    generate_concat_list(mp3_files, concat_list_path)
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0",
+        "-i", str(concat_list_path),
+        "-i", str(metadata_path),
+        "-map", "0:a",
+        "-map_metadata", "1",
+        "-map_chapters", "1",
+        "-c", "copy",
+        str(output_path)
+    ]
+
+    print("\n正在执行 FFmpeg 命令：")
+    print("  " + " ".join(cmd))
     try:
-        # ---- 计算章节（计入每段 gap）----
-        chapters = []
-        current_start = 0
-        for i, mp3_path in enumerate(mp3_files):
-            duration_ms = get_mp3_duration_ms(mp3_path)
-            current_end = current_start + duration_ms
-            chapters.append((chapter_title_of(mp3_path), current_start, current_end))
-            current_start = current_end
-            if i < len(mp3_files) - 1:
-                current_start += gap_ms
-
-        metadata_path = folder / "chapters_temp.ffmeta"
-        concat_list_path = folder / "concat_list_temp.txt"
-        generate_ffmetadata(chapters, metadata_path, args.title)
-        generate_concat_list(mp3_files, concat_list_path, silence_path)
-
-        cmd = [
-            "ffmpeg", "-y",
-            "-f", "concat", "-safe", "0",
-            "-i", str(concat_list_path),
-            "-i", str(metadata_path),
-            "-map", "0:a",
-            "-map_metadata", "1",
-            "-map_chapters", "1",
-            "-c", "copy",
-            str(output_path)
-        ]
-
-        print("\n正在执行 FFmpeg 命令：")
-        print("  " + " ".join(cmd))
-        try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
-            print(f"\n合并完成，输出文件：{output_path}")
-        except subprocess.CalledProcessError as e:
-            print("\nFFmpeg 执行失败：")
-            print("STDOUT:", e.stdout)
-            print("STDERR:", e.stderr)
-            sys.exit(1)
-        finally:
-            metadata_path.unlink(missing_ok=True)
-            concat_list_path.unlink(missing_ok=True)
-
-        # ---- 合并歌词为 SYLT ----
-        if args.no_lyrics:
-            return
-        print("\n正在处理歌词（SYLT）...")
-        sylt_data = build_sylt_data(mp3_files, chapters,
-                                    with_markers=args.chapter_markers)
-        write_sylt_to_output(output_path, sylt_data, lang=args.lyrics_lang)
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print(f"\n合并完成，输出文件：{output_path}")
+    except subprocess.CalledProcessError as e:
+        print("\nFFmpeg 执行失败：")
+        print("STDOUT:", e.stdout)
+        print("STDERR:", e.stderr)
+        sys.exit(1)
     finally:
-        if silence_tmpdir is not None:
-            shutil.rmtree(silence_tmpdir, ignore_errors=True)
+        metadata_path.unlink(missing_ok=True)
+        concat_list_path.unlink(missing_ok=True)
+
+    # ---- 新增：合并歌词为 SYLT ----
+    if args.no_lyrics:
+        return
+    print("\n正在处理歌词（SYLT）...")
+    sylt_data = build_sylt_data(mp3_files, chapters,
+                                with_markers=args.chapter_markers)
+    write_sylt_to_output(output_path, sylt_data, lang=args.lyrics_lang)
 
 
 if __name__ == "__main__":

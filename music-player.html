@@ -18,6 +18,7 @@ body{
   display:flex;flex-direction:column;overflow:hidden;
   padding:14px;
 }
+body.fullscreen-lock{overflow:hidden}
 .head{flex-shrink:0}
 .head h1{font-size:20px;margin:0 0 4px;font-weight:700;color:#222}
 .head p{margin:0 0 16px;color:#888;font-size:13px}
@@ -30,9 +31,16 @@ body{
   column-gap:16px;
   row-gap:14px;
 }
-.left-top{grid-column:1;grid-row:1;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch}
+.left-panel{
+  grid-column:1;grid-row:1 / span 2;
+  display:flex;flex-direction:column;
+  min-height:0;
+}
+.left-top{
+  flex:1;min-height:0;overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
 .right-top{grid-column:2;grid-row:1;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch}
-.left-bottom{grid-column:1;grid-row:2;display:flex;flex-direction:column;justify-content:flex-end;min-height:0}
 .right-bottom{grid-column:2;grid-row:2;display:flex;flex-direction:column;justify-content:flex-end;min-height:0}
 
 .card{background:#fff;border:1px solid #e5e5e5;border-radius:16px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);width:100%}
@@ -86,25 +94,252 @@ input[type=text]:focus{border-color:#4a9eff}
 }
 .menuBtn:active{background:#f0f0f0;color:#4a9eff}
 
+.add-item{
+  width:100%;margin-bottom:0;text-align:left;
+  border-color:#4a9eff;background:#fff;
+  font-family:inherit;font-size:inherit;color:inherit;
+  -webkit-appearance:none;appearance:none;
+}
+.add-item .name{color:#4a9eff}
+.add-item .path{color:#9bbcf0}
+.add-icon{
+  flex:0 0 38px;height:38px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  color:#4a9eff;font-size:22px;font-weight:600;line-height:1;
+}
+
 .empty{text-align:center;color:#aaa;font-size:14px;padding:30px 0}
 
-.now-playing{font-size:15px;font-weight:500;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#222}
-#progress{width:100%;margin:12px 0 6px;accent-color:#4a9eff;height:4px}
-.time-row{display:flex;justify-content:space-between;font-size:12px;color:#888;margin-bottom:12px}
-.volume-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:12px;color:#888}
-.volume-row label{flex-shrink:0}
-#volume{flex:1;accent-color:#4a9eff;height:4px}
-#volumeValue{flex-shrink:0;min-width:36px;text-align:right;font-variant-numeric:tabular-nums}
-
-.controls{display:flex;justify-content:center;flex-wrap:wrap;gap:8px}
-.controls button{
-  padding:9px 12px;border-radius:8px;border:1px solid #4a9eff;
-  background:#4a9eff;color:#fff;font-size:13px;cursor:pointer;
+/* 播放卡片头部 */
+.player-header{
+  display:grid;
+  grid-template-columns:36px 1fr 36px;
+  align-items:center;
+  gap:8px;
+  margin-bottom:10px;
+}
+.fs-btn{
+  width:36px;height:36px;border:0;background:transparent;color:#4a9eff;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;padding:0;border-radius:8px;
+  -webkit-appearance:none;appearance:none;
   -webkit-tap-highlight-color:transparent;
 }
+.fs-btn:active{background:#eef6ff}
+.fs-btn svg{width:22px;height:22px;display:block}
+.fs-spacer{width:36px;height:36px}
+
+.now-playing{
+  font-size:15px;font-weight:500;
+  text-align:center;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  color:#222;min-width:0;
+}
+
+/* 工具栏：音量 + 模式 + 定时 */
+.toolbar-row{
+  display:flex;align-items:center;gap:10px;
+  margin:0 0 12px 0;
+  flex-wrap:nowrap;
+}
+.toolbar-row .vol-label{
+  flex-shrink:0;display:flex;align-items:center;color:#4a9eff;
+}
+.toolbar-row .vol-label svg{width:20px;height:20px;display:block}
+
+/* 通用滑块：竖线 thumb 垂直居中卡在轨道上，已填充部分蓝色 */
+#volume, #progress{
+  -webkit-appearance:none;
+  appearance:none;
+  height:20px;
+  background:transparent;
+  outline:none;
+  margin:0;
+  padding:0;
+  cursor:pointer;
+  display:block;
+}
+
+#volume::-webkit-slider-runnable-track,
+#progress::-webkit-slider-runnable-track{
+  height:4px;
+  border-radius:2px;
+  background:linear-gradient(
+    to right,
+    #4a9eff 0%,
+    #4a9eff var(--pct, 0%),
+    #d9d9d9 var(--pct, 0%),
+    #d9d9d9 100%
+  );
+}
+
+#volume::-webkit-slider-thumb,
+#progress::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  appearance:none;
+  width:3px;
+  height:16px;
+  background:#4a9eff;
+  border-radius:1px;
+  border:none;
+  margin-top:-6px;
+  cursor:pointer;
+}
+
+#volume::-moz-range-track,
+#progress::-moz-range-track{
+  height:4px;
+  border-radius:2px;
+  background:#d9d9d9;
+}
+#volume::-moz-range-progress,
+#progress::-moz-range-progress{
+  height:4px;
+  border-radius:2px;
+  background:#4a9eff;
+}
+#volume::-moz-range-thumb,
+#progress::-moz-range-thumb{
+  width:3px;
+  height:16px;
+  background:#4a9eff;
+  border-radius:1px;
+  border:none;
+  cursor:pointer;
+}
+
+#volume{flex:1;min-width:0}
+
+.vol-value{
+  flex-shrink:0;min-width:34px;text-align:right;
+  font-size:12px;color:#888;font-variant-numeric:tabular-nums;
+}
+
+/* 工具栏中的小按钮 */
+.tool-btn{
+  flex-shrink:0;
+  width:34px;height:34px;padding:0;
+  border:none;background:transparent;color:#4a9eff;
+  display:inline-flex;align-items:center;justify-content:center;
+  cursor:pointer;border-radius:8px;
+  -webkit-appearance:none;appearance:none;
+  -webkit-tap-highlight-color:transparent;
+}
+.tool-btn:active{background:#eef6ff}
+.tool-btn svg{width:20px;height:20px;display:block}
+
+/* 定时暂停组合：按钮 + 剩余时间 */
+.sleep-group{display:inline-flex;align-items:center;gap:4px;flex-shrink:0}
+.sleep-remain{
+  font-size:12px;color:#4a9eff;font-variant-numeric:tabular-nums;
+  display:none;white-space:nowrap;
+}
+.sleep-remain.show{display:inline}
+
+/* 进度条行：进度条 + 当前时间/总时长 */
+.progress-row{
+  display:flex;align-items:center;gap:10px;
+  margin:0 0 6px 0;
+}
+.progress-row #progress{
+  flex:1;min-width:0;
+}
+.time-inline{
+  flex-shrink:0;
+  font-size:12px;color:#888;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+.time-sep{margin:0 1px}
+
+/* 控制按钮 */
+.controls{
+  display:flex;justify-content:center;align-items:center;gap:22px;
+  margin-top:10px;
+}
+.controls button{
+  border:none;background:transparent;color:#4a9eff;
+  display:inline-flex;align-items:center;justify-content:center;
+  cursor:pointer;border-radius:50%;
+  -webkit-appearance:none;appearance:none;
+  -webkit-tap-highlight-color:transparent;padding:0;
+}
 .controls button:active{opacity:.7}
-.controls button.secondary{background:#fff;color:#4a9eff}
-.sleep-remaining{text-align:center;font-size:12px;color:#888;margin-top:8px;min-height:16px;font-variant-numeric:tabular-nums}
+.controls #prevBtn,
+.controls #nextBtn{
+  width:48px;height:48px;
+}
+.controls #prevBtn svg,
+.controls #nextBtn svg{width:28px;height:28px;display:block}
+.controls #playBtn{
+  width:64px;height:64px;
+}
+.controls #playBtn svg{width:36px;height:36px;display:block}
+
+/* 全屏播放控制 */
+.card.fullscreen{
+  position:fixed;
+  inset:0;
+  z-index:300;
+  margin:0;
+  border-radius:0;
+  border:0;
+  box-shadow:none;
+  padding:28px 24px calc(28px + env(safe-area-inset-bottom,0px));
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  background:#fff;
+  overflow-y:auto;
+}
+.card.fullscreen .player-header{
+  grid-template-columns:56px 1fr 56px;
+  gap:12px;
+  margin-bottom:24px;
+}
+.card.fullscreen .fs-btn{width:56px;height:56px;border-radius:14px}
+.card.fullscreen .fs-btn svg{width:34px;height:34px}
+.card.fullscreen .fs-spacer{width:56px;height:56px}
+.card.fullscreen .now-playing{
+  font-size:26px;font-weight:600;line-height:1.35;
+  white-space:normal;
+  display:-webkit-box;
+  -webkit-line-clamp:3;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+}
+.card.fullscreen .toolbar-row{gap:16px;margin-bottom:22px}
+.card.fullscreen .toolbar-row .vol-label svg{width:30px;height:30px}
+
+.card.fullscreen #volume,
+.card.fullscreen #progress{height:32px}
+
+.card.fullscreen #volume::-webkit-slider-runnable-track,
+.card.fullscreen #progress::-webkit-slider-runnable-track{height:6px}
+.card.fullscreen #volume::-webkit-slider-thumb,
+.card.fullscreen #progress::-webkit-slider-thumb{
+  width:4px;height:26px;margin-top:-10px;
+}
+.card.fullscreen #volume::-moz-range-track,
+.card.fullscreen #progress::-moz-range-track{height:6px}
+.card.fullscreen #volume::-moz-range-progress,
+.card.fullscreen #progress::-moz-range-progress{height:6px}
+.card.fullscreen #volume::-moz-range-thumb,
+.card.fullscreen #progress::-moz-range-thumb{width:4px;height:26px}
+
+.card.fullscreen .vol-value{font-size:15px;min-width:52px}
+.card.fullscreen .tool-btn{width:48px;height:48px}
+.card.fullscreen .tool-btn svg{width:28px;height:28px}
+.card.fullscreen .sleep-remain{font-size:15px}
+.card.fullscreen .progress-row{gap:16px;margin-bottom:14px}
+.card.fullscreen .time-inline{font-size:16px}
+.card.fullscreen .controls{gap:40px;margin-top:18px}
+.card.fullscreen #prevBtn,
+.card.fullscreen #nextBtn{width:68px;height:68px}
+.card.fullscreen #prevBtn svg,
+.card.fullscreen #nextBtn svg{width:40px;height:40px}
+.card.fullscreen #playBtn{width:92px;height:92px}
+.card.fullscreen #playBtn svg{width:52px;height:52px}
 
 .chapter-section h3{font-size:14px;color:#888;margin:0 0 10px;font-weight:600;min-height:24px;line-height:1.4}
 .chapter-item{
@@ -129,13 +364,13 @@ input[type=text]:focus{border-color:#4a9eff}
   background:rgba(40,44,54,.95);color:#fff;
   padding:11px 18px;border-radius:12px;font-size:14px;
   max-width:86vw;text-align:center;
-  opacity:0;pointer-events:none;transition:.25s;z-index:100;
+  opacity:0;pointer-events:none;transition:.25s;z-index:400;
 }
 .toast.show{opacity:1;transform:translate(-50%,0)}
 
 .overlay{
   position:fixed;inset:0;background:rgba(0,0,0,.35);
-  z-index:200;display:flex;justify-content:center;
+  z-index:500;display:flex;justify-content:center;
 }
 .overlay.bottom{align-items:flex-end}
 .overlay.center{align-items:center}
@@ -153,6 +388,11 @@ input[type=text]:focus{border-color:#4a9eff}
 .sheet-btn:active{background:#e8e8e8}
 .sheet-btn.danger{color:#ef4444}
 .sheet-btn.cancel{background:#fff;border:1px solid #e5e5e5;color:#666;margin-top:4px}
+
+.add-sheet{padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px));gap:10px}
+.add-sheet .lbl{margin:0 0 6px}
+.add-sheet .btn-row{margin-top:0}
+.add-sheet .sheet-btn.cancel{margin-top:0}
 
 .dialog{
   width:calc(100% - 48px);max-width:360px;background:#fff;border-radius:16px;
@@ -174,10 +414,19 @@ input[type=text]:focus{border-color:#4a9eff}
     display:block;overflow:auto;
     padding-bottom:calc(20px + env(safe-area-inset-bottom,0px));
   }
+  body.fullscreen-lock{overflow:hidden}
   .layout{display:block}
+  .left-panel{display:block}
   .left-top,.right-top{overflow:visible;margin-bottom:14px}
-  .left-bottom,.right-bottom{display:block;margin-bottom:14px}
-  .right-bottom{margin-bottom:0}
+  .right-bottom{display:block;margin-bottom:0}
+  .card.fullscreen{
+    padding:24px 18px calc(24px + env(safe-area-inset-bottom,0px));
+  }
+  .card.fullscreen .now-playing{font-size:22px}
+  .card.fullscreen .controls{gap:28px}
+  .card.fullscreen #prevBtn,
+  .card.fullscreen #nextBtn{width:60px;height:60px}
+  .card.fullscreen #playBtn{width:84px;height:84px}
 }
 </style>
 </head>
@@ -189,32 +438,26 @@ input[type=text]:focus{border-color:#4a9eff}
 </div>
 
 <div class="layout">
-  <div class="left-top">
-    <div class="listHead">
-      <span>专辑文件 <b id="count">0</b></span>
-    </div>
-    <ul id="list" class="list"></ul>
-    <p id="empty" class="empty">还没有音频，先添加一个吧</p>
-  </div>
-
-  <div class="left-bottom">
-    <section class="card">
-      <label class="lbl first" for="pathInput">文件地址（file:///）</label>
-      <input id="pathInput" type="text" inputmode="url" autocomplete="off"
-             autocapitalize="off" spellcheck="false"
-             value="file:///sdcard/Download/">
-
-      <div class="btn-row">
-        <button id="addBtn" class="btn">保存地址</button>
-        <button id="pickBtn" class="btn secondary">从本机选择文件</button>
+  <div class="left-panel">
+    <div class="left-top">
+      <div class="listHead">
+        <span>专辑文件 <b id="count">0</b></span>
       </div>
-      <input id="filePicker" type="file" accept="audio/*,.mp3,.flac,.wav,.m4a,.ogg,.opus" multiple hidden>
-    </section>
+      <ul id="list" class="list"></ul>
+      <p id="empty" class="empty">还没有音频，先添加一个吧</p>
+      <button id="openAddMenuBtn" class="item add-item" type="button">
+        <div class="info">
+          <div class="name">添加文件</div>
+          <div class="path">输入地址或从本机选择</div>
+        </div>
+        <div class="add-icon">＋</div>
+      </button>
+    </div>
   </div>
 
   <div class="right-top">
     <div class="chapter-section">
-      <h3>章节列表</h3>
+      <h3>歌曲列表</h3>
       <ul id="chapterList" class="list" style="margin:0;"></ul>
       <div id="chapterEmpty" class="chapter-empty">点击左侧专辑文件后，若包含章节信息会显示在这里</div>
     </div>
@@ -222,25 +465,39 @@ input[type=text]:focus{border-color:#4a9eff}
 
   <div class="right-bottom">
     <div class="card" id="playerCard">
-      <div class="now-playing" id="nowPlaying">未选择音频</div>
-      <input type="range" id="progress" min="0" max="1000" value="0" step="1">
-      <div class="time-row">
-        <span id="currentTime">0:00</span>
-        <span id="totalTime">0:00</span>
+      <div class="player-header">
+        <button id="fsBtn" class="fs-btn" type="button" aria-label="放大播放控制">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill="none" d="M0 0h24v24H0z"></path><path d="M6.41421 5H10V3H3V10H5V6.41421L9.29289 10.7071L10.7071 9.29289L6.41421 5ZM21 14H19V17.5858L14.7071 13.2929L13.2929 14.7071L17.5858 19H14V21H21V14Z"></path></svg>
+        </button>
+        <div class="now-playing" id="nowPlaying">未选择音频</div>
+        <span class="fs-spacer" aria-hidden="true"></span>
       </div>
-      <div class="volume-row">
-        <label for="volume">音量</label>
+
+      <div class="toolbar-row">
+        <span class="vol-label">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill="none" d="M0 0h24v24H0z"></path><path d="M2 16.0001H5.88889L11.1834 20.3319C11.2727 20.405 11.3846 20.4449 11.5 20.4449C11.7761 20.4449 12 20.2211 12 19.9449V4.05519C12 3.93977 11.9601 3.8279 11.887 3.73857C11.7121 3.52485 11.3971 3.49335 11.1834 3.66821L5.88889 8.00007H2C1.44772 8.00007 1 8.44778 1 9.00007V15.0001C1 15.5524 1.44772 16.0001 2 16.0001ZM23 12C23 15.292 21.5539 18.2463 19.2622 20.2622L17.8445 18.8444C19.7758 17.1937 21 14.7398 21 12C21 9.26016 19.7758 6.80629 17.8445 5.15557L19.2622 3.73779C21.5539 5.75368 23 8.70795 23 12ZM18 12C18 10.0883 17.106 8.38548 15.7133 7.28673L14.2842 8.71584C15.3213 9.43855 16 10.64 16 12C16 13.36 15.3213 14.5614 14.2842 15.2841L15.7133 16.7132C17.106 15.6145 18 13.9116 18 12Z"></path></svg>
+        </span>
         <input type="range" id="volume" min="0" max="100" value="100" step="1">
-        <span id="volumeValue">100%</span>
+        <span id="volumeValue" class="vol-value">100%</span>
+        <button id="modeBtn" type="button" class="tool-btn" aria-label="播放模式"></button>
+        <span class="sleep-group">
+          <button id="sleepBtn" type="button" class="tool-btn" aria-label="定时暂停"></button>
+          <span id="sleepRemain" class="sleep-remain"></span>
+        </span>
       </div>
+
+      <div class="progress-row">
+        <input type="range" id="progress" min="0" max="1000" value="0" step="1">
+        <span class="time-inline">
+          <span id="currentTime">0:00</span><span class="time-sep">/</span><span id="totalTime">0:00</span>
+        </span>
+      </div>
+
       <div class="controls">
-        <button id="modeBtn" type="button" class="secondary">顺序播放</button>
-        <button id="sleepBtn" type="button" class="secondary">定时暂停：关闭</button>
-        <button id="prevBtn" type="button" class="secondary">上一首</button>
-        <button id="playBtn" type="button">播放</button>
-        <button id="nextBtn" type="button" class="secondary">下一首</button>
+        <button id="prevBtn" type="button" aria-label="上一首"></button>
+        <button id="playBtn" type="button" aria-label="播放"></button>
+        <button id="nextBtn" type="button" aria-label="下一首"></button>
       </div>
-      <div class="sleep-remaining" id="sleepRemaining"></div>
     </div>
   </div>
 </div>
@@ -248,6 +505,7 @@ input[type=text]:focus{border-color:#4a9eff}
 <audio id="audio" preload="metadata"></audio>
 <div id="toast" class="toast"></div>
 
+<!-- 文件项二级菜单 -->
 <div id="menuOverlay" class="overlay bottom" style="display:none;">
   <div class="action-sheet">
     <button id="menuRename" class="sheet-btn" type="button">重命名</button>
@@ -256,6 +514,23 @@ input[type=text]:focus{border-color:#4a9eff}
   </div>
 </div>
 
+<!-- 添加文件菜单 -->
+<div id="addOverlay" class="overlay bottom" style="display:none;">
+  <div class="action-sheet add-sheet">
+    <label class="lbl" for="pathInput">文件地址（file:///）</label>
+    <input id="pathInput" type="text" inputmode="url" autocomplete="off"
+           autocapitalize="off" spellcheck="false"
+           value="file:///sdcard/Download/">
+    <div class="btn-row">
+      <button id="addBtn" class="btn">保存地址</button>
+      <button id="pickBtn" class="btn secondary">从本机选择文件</button>
+    </div>
+    <button id="addCancel" class="sheet-btn cancel" type="button">取消</button>
+    <input id="filePicker" type="file" accept="audio/*,.mp3,.flac,.wav,.m4a,.ogg,.opus" multiple hidden>
+  </div>
+</div>
+
+<!-- 重命名对话框 -->
 <div id="dialogOverlay" class="overlay center" style="display:none;">
   <div class="dialog">
     <h3>重命名</h3>
@@ -271,6 +546,20 @@ input[type=text]:focus{border-color:#4a9eff}
 (function () {
   'use strict';
 
+  /* ---------------- SVG 图标 ---------------- */
+  var SVG_PLAY = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill="none" d="M0 0h24v24H0z"></path><path d="M6 20.1957V3.80421C6 3.01878 6.86395 2.53993 7.53 2.95621L20.6432 11.152C21.2699 11.5436 21.2699 12.4563 20.6432 12.848L7.53 21.0437C6.86395 21.46 6 20.9812 6 20.1957Z"></path></svg>';
+  var SVG_PAUSE = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill="none" d="M0 0h24v24H0z"></path><path d="M6 3H8V21H6V3ZM16 3H18V21H16V3Z"></path></svg>';
+  var SVG_PREV = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill="none" d="M0 0h24v24H0z"></path><path d="M8 11.3333L18.2227 4.51823C18.4524 4.36506 18.7628 4.42714 18.916 4.65691C18.9708 4.73904 19 4.83555 19 4.93426V19.0657C19 19.3419 18.7761 19.5657 18.5 19.5657C18.4013 19.5657 18.3048 19.5365 18.2227 19.4818L8 12.6667V19C8 19.5523 7.55228 20 7 20C6.44772 20 6 19.5523 6 19V5C6 4.44772 6.44772 4 7 4C7.55228 4 8 4.44772 8 5V11.3333Z"></path></svg>';
+  var SVG_NEXT = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill="none" d="M0 0h24v24H0z"></path><path d="M16 12.6667L5.77735 19.4818C5.54759 19.6349 5.23715 19.5729 5.08397 19.3431C5.02922 19.261 5 19.1645 5 19.0657V4.93426C5 4.65812 5.22386 4.43426 5.5 4.43426C5.59871 4.43426 5.69522 4.46348 5.77735 4.51823L16 11.3333V5C16 4.44772 16.4477 4 17 4C17.5523 4 18 4.44772 18 5V19C18 19.5523 17.5523 20 17 20C16.4477 20 16 19.5523 16 19V12.6667Z"></path></svg>';
+  var SVG_REPEAT_ALL = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill="none" d="M0 0h24v24H0z"></path><path d="M8 20V21.9325C8 22.2086 7.77614 22.4325 7.5 22.4325C7.38303 22.4325 7.26977 22.3915 7.17991 22.3166L3.06093 18.8841C2.84879 18.7073 2.82013 18.392 2.99691 18.1799C3.09191 18.0659 3.23264 18 3.38103 18L18 18C19.1046 18 20 17.1046 20 16V8H22V16C22 18.2091 20.2091 20 18 20H8ZM16 4V2.0675C16 1.79136 16.2239 1.5675 16.5 1.5675C16.617 1.5675 16.7302 1.60851 16.8201 1.68339L20.9391 5.11587C21.1512 5.29266 21.1799 5.60794 21.0031 5.82008C20.9081 5.93407 20.7674 5.99998 20.619 5.99998L6 6C4.89543 6 4 6.89543 4 8V16H2V8C2 5.79086 3.79086 4 6 4H16Z"></path></svg>';
+  var SVG_REPEAT_ONE = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill="none" d="M0 0h24v24H0z"></path><path d="M8 20V21.9325C8 22.2086 7.77614 22.4325 7.5 22.4325C7.38303 22.4325 7.26977 22.3915 7.17991 22.3166L3.06093 18.8841C2.84879 18.7073 2.82013 18.392 2.99691 18.1799C3.09191 18.0659 3.23264 18 3.38103 18H8L18 18C19.1046 18 20 17.1046 20 16V8H22V16C22 18.2091 20.2091 20 18 20H8ZM16 4V2.0675C16 1.79136 16.2239 1.5675 16.5 1.5675C16.617 1.5675 16.7302 1.60851 16.8201 1.68339L20.9391 5.11587C21.1512 5.29266 21.1799 5.60794 21.0031 5.82008C20.9081 5.93407 20.7674 5.99998 20.619 5.99998H16L6 6C4.89543 6 4 6.89543 4 8V16H2V8C2 5.79086 3.79086 4 6 4H16ZM11 8H13V16H11V10H9V9L11 8Z"></path></svg>';
+  var SVG_ORDER = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill="none" d="M0 0h24v24H0z"></path><path d="M17 3.99998V2.0675C17 1.79136 17.2239 1.5675 17.5 1.5675C17.617 1.5675 17.7302 1.60851 17.8201 1.68339L21.9391 5.11587C22.1512 5.29266 22.1799 5.60794 22.0031 5.82008C21.9081 5.93407 21.7674 5.99998 21.619 5.99998H2V3.99998H17ZM2 18H22V20H2V18ZM2 11H22V13H2V11Z"></path></svg>';
+  var SVG_SHUFFLE = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill="none" d="M0 0h24v24H0z"></path><path d="M18 17.8832V16L23 19L18 22V19.9095C14.9224 19.4698 12.2513 17.4584 11.0029 14.5453L11 14.5386L10.9971 14.5453C9.57893 17.8544 6.32508 20 2.72483 20H2V18H2.72483C5.52503 18 8.05579 16.3312 9.15885 13.7574L9.91203 12L9.15885 10.2426C8.05579 7.66878 5.52503 6 2.72483 6H2V4H2.72483C6.32508 4 9.57893 6.14557 10.9971 9.45473L11 9.46141L11.0029 9.45473C12.2513 6.5416 14.9224 4.53022 18 4.09051V2L23 5L18 8V6.11684C15.7266 6.53763 13.7737 8.0667 12.8412 10.2426L12.088 12L12.8412 13.7574C13.7737 15.9333 15.7266 17.4624 18 17.8832Z"></path></svg>';
+  var SVG_SLEEP = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill="none" d="M0 0h24v24H0z"></path><path d="M12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22ZM13 12V7H11V14H17V12H13Z"></path></svg>';
+
+  var ICON_EXPAND = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill="none" d="M0 0h24v24H0z"></path><path d="M6.41421 5H10V3H3V10H5V6.41421L9.29289 10.7071L10.7071 9.29289L6.41421 5ZM21 14H19V17.5858L14.7071 13.2929L13.2929 14.7071L17.5858 19H14V21H21V14Z"></path></svg>';
+  var ICON_SHRINK = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill="none" d="M0 0h24v24H0z"></path><path d="M9.00008 4.00008H11.0001V11.0001H4.00008V9.00008H7.58586L3.29297 4.70718L4.70718 3.29297L9.00008 7.58586V4.00008ZM20 15H16.4142L20.7071 19.2929L19.2929 20.7071L15 16.4142V20H13V13H20V15Z"></path></svg>';
+
   var LS_KEY = 'mp3_album_player_tracks_v1';
   var LS_VOLUME = 'mp3_album_player_volume';
   var LS_MODE = 'mp3_album_player_mode';
@@ -279,10 +568,12 @@ input[type=text]:focus{border-color:#4a9eff}
   var tmpTracks = [];
   var currentTrackId = null;
   var currentTrack = null;
-  var currentChapters = [];   // 当前专辑的有效章节（包括虚拟单章）
+  var currentChapters = [];
   var currentChapterIndex = -1;
 
   var audio = document.getElementById('audio');
+  var playerCard = document.getElementById('playerCard');
+  var fsBtn = document.getElementById('fsBtn');
   var progressEl = document.getElementById('progress');
   var currentTimeEl = document.getElementById('currentTime');
   var totalTimeEl = document.getElementById('totalTime');
@@ -299,13 +590,44 @@ input[type=text]:focus{border-color:#4a9eff}
   var volumeValueEl = document.getElementById('volumeValue');
   var modeBtn = document.getElementById('modeBtn');
   var sleepBtn = document.getElementById('sleepBtn');
-  var sleepRemainingEl = document.getElementById('sleepRemaining');
+  var sleepRemainEl = document.getElementById('sleepRemain');
 
   var seekDragging = false;
   var seekingByChapter = false;
   var chapterEndedHandled = false;
 
-  /* ---------------- 工具 ---------------- */
+  prevBtn.innerHTML = SVG_PREV;
+  nextBtn.innerHTML = SVG_NEXT;
+  playBtn.innerHTML = SVG_PLAY;
+
+  /* ---------------- 滑块填充辅助 ---------------- */
+  function setVolumeValue(v) {
+    volumeEl.value = v;
+    var pct = Math.max(0, Math.min(100, parseFloat(v) || 0));
+    volumeEl.style.setProperty('--pct', pct + '%');
+  }
+  function setProgressValue(v) {
+    progressEl.value = v;
+    var pct = Math.max(0, Math.min(100, (parseFloat(v) || 0) / 10));
+    progressEl.style.setProperty('--pct', pct + '%');
+  }
+
+  /* ---------------- 放大 / 缩小 ---------------- */
+  function setFullscreen(on) {
+    playerCard.classList.toggle('fullscreen', on);
+    document.body.classList.toggle('fullscreen-lock', on);
+    fsBtn.innerHTML = on ? ICON_SHRINK : ICON_EXPAND;
+    fsBtn.setAttribute('aria-label', on ? '退出放大' : '放大播放控制');
+  }
+  fsBtn.addEventListener('click', function () {
+    setFullscreen(!playerCard.classList.contains('fullscreen'));
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && playerCard.classList.contains('fullscreen')) {
+      setFullscreen(false);
+    }
+  });
+
   function uid() {
     return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   }
@@ -332,7 +654,6 @@ input[type=text]:focus{border-color:#4a9eff}
     toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2600);
   }
 
-  /* ---------------- 存储 ---------------- */
   function loadStore() {
     try {
       var raw = localStorage.getItem(LS_KEY);
@@ -364,7 +685,16 @@ input[type=text]:focus{border-color:#4a9eff}
     return null;
   }
 
-  /* ---------------- 二级菜单 ---------------- */
+  var addOverlay = document.getElementById('addOverlay');
+  document.getElementById('openAddMenuBtn').addEventListener('click', function () {
+    addOverlay.style.display = 'flex';
+  });
+  function closeAddMenu() { addOverlay.style.display = 'none'; }
+  document.getElementById('addCancel').addEventListener('click', closeAddMenu);
+  addOverlay.addEventListener('click', function (e) {
+    if (e.target === this) closeAddMenu();
+  });
+
   var menuTrackId = null;
   var dialogTrackId = null;
 
@@ -389,7 +719,6 @@ input[type=text]:focus{border-color:#4a9eff}
     if (!t) return;
     openRenameDialog(t);
   });
-
   document.getElementById('menuDelete').addEventListener('click', function () {
     var id = menuTrackId;
     closeMenu();
@@ -424,7 +753,6 @@ input[type=text]:focus{border-color:#4a9eff}
       for (var i = 0; i < urlTracks.length; i++) {
         if (urlTracks[i].id === id) { saveStore(); break; }
       }
-      // 如果是当前专辑的虚拟章节，同步更新章节标题
       if (currentTrackId === id && currentChapters.length === 1 && currentChapters[0].virtual) {
         currentChapters[0].title = val;
         renderChapters();
@@ -444,13 +772,18 @@ input[type=text]:focus{border-color:#4a9eff}
     }
   });
 
-  /* ---------------- 播放模式 ---------------- */
   var MODES = [
     { key: 'order', label: '顺序播放' },
     { key: 'repeatAll', label: '列表循环' },
     { key: 'repeatOne', label: '单曲循环' },
     { key: 'shuffle', label: '随机播放' }
   ];
+  var MODE_ICONS = {
+    order: SVG_ORDER,
+    repeatAll: SVG_REPEAT_ALL,
+    repeatOne: SVG_REPEAT_ONE,
+    shuffle: SVG_SHUFFLE
+  };
   var modeIndex = 0;
   var shuffleQueue = [];
   var shufflePos = -1;
@@ -464,7 +797,11 @@ input[type=text]:focus{border-color:#4a9eff}
   } catch (e) {}
 
   function currentMode() { return MODES[modeIndex].key; }
-  function updateModeButton() { modeBtn.textContent = MODES[modeIndex].label; }
+  function updateModeButton() {
+    modeBtn.innerHTML = MODE_ICONS[currentMode()];
+    modeBtn.setAttribute('aria-label', MODES[modeIndex].label);
+    modeBtn.setAttribute('title', MODES[modeIndex].label);
+  }
   function saveMode() {
     try { localStorage.setItem(LS_MODE, currentMode()); } catch (e) {}
   }
@@ -528,6 +865,7 @@ input[type=text]:focus{border-color:#4a9eff}
   modeBtn.addEventListener('click', function () {
     modeIndex = (modeIndex + 1) % MODES.length;
     updateModeButton();
+    toast(MODES[modeIndex].label);
     if (currentMode() === 'shuffle' && currentChapters.length > 0) {
       buildShuffleQueue(currentChapterIndex);
     }
@@ -535,45 +873,48 @@ input[type=text]:focus{border-color:#4a9eff}
   });
   updateModeButton();
 
-  /* ---------------- 定时暂停 ---------------- */
   var SLEEP_OPTIONS = [0, 15, 30, 60, 90];
   var sleepOptionIndex = 0;
   var sleepTimerEndAt = null;
   var sleepTimerInterval = null;
 
-  function formatRemaining(ms) {
-    if (ms < 0) ms = 0;
+  function fmtRemain(ms) {
+    if (!isFinite(ms) || ms < 0) ms = 0;
     var totalSec = Math.ceil(ms / 1000);
     var m = Math.floor(totalSec / 60);
     var s = totalSec % 60;
     return m + ':' + (s < 10 ? '0' + s : s);
   }
-  function updateSleepButton() {
-    var mins = SLEEP_OPTIONS[sleepOptionIndex];
-    if (mins === 0) {
-      sleepBtn.textContent = '定时暂停：关闭';
-      sleepRemainingEl.textContent = '';
+  function updateSleepRemain(remainMs) {
+    if (remainMs == null || remainMs <= 0) {
+      sleepRemainEl.textContent = '';
+      sleepRemainEl.classList.remove('show');
     } else {
-      sleepBtn.textContent = '定时暂停：' + mins + '分钟';
+      sleepRemainEl.textContent = fmtRemain(remainMs);
+      sleepRemainEl.classList.add('show');
     }
   }
-  function updateSleepRemaining() {
-    if (sleepTimerEndAt == null) { sleepRemainingEl.textContent = ''; return; }
-    var remain = sleepTimerEndAt - Date.now();
-    if (remain <= 0) sleepRemainingEl.textContent = '';
-    else sleepRemainingEl.textContent = '剩余 ' + formatRemaining(remain);
+  function updateSleepButton() {
+    sleepBtn.innerHTML = SVG_SLEEP;
+    sleepBtn.setAttribute('aria-label', '定时暂停');
+    sleepBtn.setAttribute('title', '定时暂停');
   }
   function stopSleepTimer() {
     if (sleepTimerInterval) { clearInterval(sleepTimerInterval); sleepTimerInterval = null; }
     sleepTimerEndAt = null;
+    updateSleepRemain(null);
   }
   function startSleepTimer() {
     stopSleepTimer();
     var mins = SLEEP_OPTIONS[sleepOptionIndex];
     updateSleepButton();
-    if (mins === 0) { updateSleepRemaining(); return; }
+    if (mins === 0) {
+      toast('定时暂停：关闭');
+      return;
+    }
     sleepTimerEndAt = Date.now() + mins * 60 * 1000;
-    updateSleepRemaining();
+    updateSleepRemain(sleepTimerEndAt - Date.now());
+    toast('定时暂停：' + mins + '分钟');
     sleepTimerInterval = setInterval(function () {
       if (sleepTimerEndAt == null) return;
       var remain = sleepTimerEndAt - Date.now();
@@ -581,11 +922,10 @@ input[type=text]:focus{border-color:#4a9eff}
         stopSleepTimer();
         sleepOptionIndex = 0;
         updateSleepButton();
-        updateSleepRemaining();
         if (!audio.paused) audio.pause();
         toast('定时暂停时间到，已暂停播放');
       } else {
-        updateSleepRemaining();
+        updateSleepRemain(remain);
       }
     }, 500);
   }
@@ -595,7 +935,6 @@ input[type=text]:focus{border-color:#4a9eff}
   });
   updateSleepButton();
 
-  /* ---------------- 音量 ---------------- */
   var savedVolume = 100;
   try {
     var v = localStorage.getItem(LS_VOLUME);
@@ -607,7 +946,7 @@ input[type=text]:focus{border-color:#4a9eff}
   function applyVolume(percent) {
     var clamped = Math.max(0, Math.min(100, percent));
     audio.volume = clamped / 100;
-    volumeEl.value = clamped;
+    setVolumeValue(clamped);
     volumeValueEl.textContent = clamped + '%';
     try { localStorage.setItem(LS_VOLUME, String(clamped)); } catch (e) {}
   }
@@ -616,7 +955,6 @@ input[type=text]:focus{border-color:#4a9eff}
   });
   applyVolume(savedVolume);
 
-  /* ---------------- CHAP 解析 ---------------- */
   function readUint32BE(bytes, offset) {
     return ((bytes[offset] << 24) | (bytes[offset+1] << 16) |
             (bytes[offset+2] << 8) | bytes[offset+3]) >>> 0;
@@ -726,7 +1064,6 @@ input[type=text]:focus{border-color:#4a9eff}
     });
   }
 
-  /* ---------------- 渲染文件列表 ---------------- */
   function renderTrackList() {
     var items = allTracks();
     countEl.textContent = items.length;
@@ -765,7 +1102,6 @@ input[type=text]:focus{border-color:#4a9eff}
     });
   }
 
-  /* ---------------- 渲染章节列表 ---------------- */
   function renderChapters() {
     chapterListEl.innerHTML = '';
     if (!currentChapters.length) {
@@ -806,7 +1142,6 @@ input[type=text]:focus{border-color:#4a9eff}
     });
   }
 
-  /* ---------------- 章节点击 ---------------- */
   function onChapterClick(index) {
     if (index < 0 || index >= currentChapters.length) return;
 
@@ -831,7 +1166,6 @@ input[type=text]:focus{border-color:#4a9eff}
     playChapter(index, true);
   }
 
-  /* ---------------- 播放控制 ---------------- */
   async function loadAlbum(trackId) {
     var t = findTrack(trackId);
     if (!t) return;
@@ -848,10 +1182,11 @@ input[type=text]:focus{border-color:#4a9eff}
     audio.load();
 
     nowPlayingEl.textContent = t.name;
-    progressEl.value = '0';
+    setProgressValue('0');
     currentTimeEl.textContent = '0:00';
     totalTimeEl.textContent = '0:00';
-    playBtn.textContent = '播放';
+    playBtn.innerHTML = SVG_PLAY;
+    playBtn.setAttribute('aria-label', '播放');
 
     renderTrackList();
     renderChapters();
@@ -962,6 +1297,12 @@ input[type=text]:focus{border-color:#4a9eff}
     }
 
     var nextIdx = getNextChapterIndex(1);
+    // 防御性处理：shuffle 模式下若意外取不到下一章，强制重建队列继续
+    if (nextIdx < 0 && mode === 'shuffle' && currentChapters.length > 0) {
+      buildShuffleQueue(null);
+      shufflePos = 0;
+      nextIdx = shuffleQueue.length > 0 ? shuffleQueue[0] : -1;
+    }
     if (nextIdx >= 0) {
       playChapter(nextIdx, true);
     } else {
@@ -996,8 +1337,9 @@ input[type=text]:focus{border-color:#4a9eff}
       shuffleQueue = [];
       shufflePos = -1;
       nowPlayingEl.textContent = '未选择音频';
-      playBtn.textContent = '播放';
-      progressEl.value = '0';
+      playBtn.innerHTML = SVG_PLAY;
+      playBtn.setAttribute('aria-label', '播放');
+      setProgressValue('0');
       currentTimeEl.textContent = '0:00';
       totalTimeEl.textContent = '0:00';
       renderChapters();
@@ -1005,11 +1347,11 @@ input[type=text]:focus{border-color:#4a9eff}
     renderTrackList();
   }
 
-  /* ---------------- 进度条 UI ---------------- */
   function updateProgressUI() {
     if (currentChapterIndex < 0 || currentChapters.length === 0) {
       var dur = isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
-      progressEl.value = dur > 0 ? String(Math.round(audio.currentTime / dur * 1000)) : '0';
+      var pv = dur > 0 ? Math.round(audio.currentTime / dur * 1000) : 0;
+      setProgressValue(String(pv));
       currentTimeEl.textContent = fmt(audio.currentTime);
       totalTimeEl.textContent = fmt(dur);
       return;
@@ -1020,18 +1362,20 @@ input[type=text]:focus{border-color:#4a9eff}
     if (!isFinite(endSec)) endSec = startSec;
     var cur = Math.max(0, Math.min(audio.currentTime, endSec) - startSec);
     var dur2 = endSec - startSec;
-    progressEl.value = dur2 > 0 ? String(Math.round(cur / dur2 * 1000)) : '0';
+    var pv2 = dur2 > 0 ? Math.round(cur / dur2 * 1000) : 0;
+    setProgressValue(String(pv2));
     currentTimeEl.textContent = fmt(cur);
     totalTimeEl.textContent = fmt(dur2);
   }
 
-  /* ---------------- 音频事件 ---------------- */
   audio.addEventListener('play', function () {
-    playBtn.textContent = '暂停';
+    playBtn.innerHTML = SVG_PAUSE;
+    playBtn.setAttribute('aria-label', '暂停');
     requestWakeLock();
   });
   audio.addEventListener('pause', function () {
-    playBtn.textContent = '播放';
+    playBtn.innerHTML = SVG_PLAY;
+    playBtn.setAttribute('aria-label', '播放');
   });
   audio.addEventListener('timeupdate', function () {
     if (seekDragging) return;
@@ -1053,9 +1397,8 @@ input[type=text]:focus{border-color:#4a9eff}
     if (!isFinite(endSec)) endSec = startSec;
     var cur = Math.max(0, Math.min(audio.currentTime, endSec) - startSec);
     var dur = endSec - startSec;
-    if (dur > 0) {
-      progressEl.value = String(Math.round(cur / dur * 1000));
-    }
+    var pv = dur > 0 ? Math.round(cur / dur * 1000) : 0;
+    setProgressValue(String(pv));
     currentTimeEl.textContent = fmt(cur);
     totalTimeEl.textContent = fmt(dur);
   });
@@ -1066,13 +1409,13 @@ input[type=text]:focus{border-color:#4a9eff}
     updateProgressUI();
   });
   audio.addEventListener('ended', function () {
-    playBtn.textContent = '播放';
+    playBtn.innerHTML = SVG_PLAY;
+    playBtn.setAttribute('aria-label', '播放');
     if (currentChapterIndex < 0 || currentChapters.length === 0) return;
-    var ch = currentChapters[currentChapterIndex];
-    // 虚拟章节或无明确 endMs 时，用 ended 触发章节结束
-    if (ch.endMs == null) {
-      handleChapterEnded();
-    }
+    // 无论 endMs 是否有值，都强制交给 handleChapterEnded 处理
+    // 避免随机/循环模式在到达文件末尾时因防抖被跳过而停止
+    chapterEndedHandled = false;
+    handleChapterEnded();
   });
   audio.addEventListener('error', function () {
     if (!currentTrackId) return;
@@ -1087,10 +1430,10 @@ input[type=text]:focus{border-color:#4a9eff}
     toast(msg);
   });
 
-  /* ---------------- 进度条 ---------------- */
   progressEl.addEventListener('pointerdown', function () { seekDragging = true; });
   progressEl.addEventListener('input', function () {
     seekDragging = true;
+    setProgressValue(progressEl.value);
     if (currentChapterIndex >= 0 && currentChapters.length > 0) {
       var ch = currentChapters[currentChapterIndex];
       var startSec = ch.startMs / 1000;
@@ -1122,12 +1465,10 @@ input[type=text]:focus{border-color:#4a9eff}
   });
   progressEl.addEventListener('pointerup', function () { seekDragging = false; });
 
-  /* ---------------- 按钮绑定 ---------------- */
   playBtn.addEventListener('click', togglePlay);
   prevBtn.addEventListener('click', playPrev);
   nextBtn.addEventListener('click', playNext);
 
-  /* ---------------- 添加地址 ---------------- */
   document.getElementById('addBtn').addEventListener('click', function () {
     var p = document.getElementById('pathInput').value.trim();
     if (!p) { toast('请先输入 file:/// 地址'); return; }
@@ -1141,10 +1482,10 @@ input[type=text]:focus{border-color:#4a9eff}
     urlTracks.push({ id: uid(), name: name, src: p, kind: 'url' });
     saveStore();
     renderTrackList();
+    closeAddMenu();
     toast('已保存');
   });
 
-  /* ---------------- 选择本地文件 ---------------- */
   var filePicker = document.getElementById('filePicker');
   document.getElementById('pickBtn').addEventListener('click', function () {
     filePicker.click();
@@ -1162,10 +1503,10 @@ input[type=text]:focus{border-color:#4a9eff}
     });
     filePicker.value = '';
     renderTrackList();
+    closeAddMenu();
     toast('已加入 ' + files.length + ' 个文件');
   });
 
-  /* ---------------- 屏幕常亮 ---------------- */
   var wakeLock = null;
   function requestWakeLock() {
     if (!('wakeLock' in navigator)) return;
@@ -1179,7 +1520,6 @@ input[type=text]:focus{border-color:#4a9eff}
     if (document.visibilityState === 'visible' && !audio.paused) requestWakeLock();
   });
 
-  /* ---------------- 锁屏控制 ---------------- */
   function updateMediaSession(chapterTitle, albumName) {
     if (!('mediaSession' in navigator)) return;
     try {
@@ -1206,7 +1546,6 @@ input[type=text]:focus{border-color:#4a9eff}
     } catch (e) {}
   }
 
-  /* ---------------- 初始化 ---------------- */
   loadStore();
   renderTrackList();
   renderChapters();

@@ -384,6 +384,17 @@ input[type=text]:focus{border-color:var(--accent)}
 .controls #playBtn{width:64px;height:64px;}
 .controls #playBtn svg{width:36px;height:36px;display:block}
 
+/* 播放控制按钮点击反馈 */
+.fs-btn, .tool-btn, .controls button{
+  transition: transform .18s cubic-bezier(.2,.8,.25,1);
+}
+.fs-btn.btn-pressed,
+.tool-btn.btn-pressed,
+.controls button.btn-pressed{
+  transform: scale(.9);
+  transition-duration: .07s;
+}
+
 /* ==================== 放大模式 ==================== */
 body.fullscreen-mode{padding:0;background:#f5f5f5}
 body.fullscreen-mode .head{display:none}
@@ -442,6 +453,34 @@ body.fullscreen-mode .right-bottom{
   overflow:hidden;
 }
 
+/* 放大 / 缩小动画 */
+@keyframes fs-card-out{
+  from{opacity:0;transform:scale(.96);}
+  to{opacity:1;transform:scale(1);}
+}
+.card.fs-anim-out{animation:fs-card-out .22s ease-out;}
+/* 进入放大时让卡片停靠在右侧列底部，高度自下向上增长 */
+body.fullscreen-mode.fs-grow .right-bottom{justify-content:flex-end}
+/* 退出放大时先回到普通布局但隐藏页头，让卡片从全屏高度开始向下收缩 */
+body.fs-collapse .head{display:none}
+body.fs-collapse .layout{row-gap:0}
+body.fs-collapse .right-top{overflow:hidden}
+.card.fs-shrink{display:flex;flex-direction:column;justify-content:flex-start}
+.card.fs-shrink .player-stage{display:block;flex:1 1 auto;min-height:0}
+@keyframes fs-head-in{
+  from{opacity:0;}
+  to{opacity:1;}
+}
+body.fs-head-in .head{animation:fs-head-in .24s ease-out;}
+@media (prefers-reduced-motion: reduce){
+  .card.fs-anim-out{animation:none;}
+  body.fs-head-in .head{animation:none;}
+  .fs-btn, .tool-btn, .controls button{transition:none;}
+  .fs-btn.btn-pressed,
+  .tool-btn.btn-pressed,
+  .controls button.btn-pressed{transform:none;}
+}
+
 .card.fullscreen .settings-menu{
   position:fixed;
   left:calc(50% + 13px);right:14px;top:16px;
@@ -452,6 +491,7 @@ body.fullscreen-mode .right-bottom{
 
 /* 歌曲列表 */
 .chapter-section h3{font-size:14px;color:#888;margin:0 0 10px;font-weight:600;min-height:24px;line-height:1.4}
+.chapter-section h3 b{color:#222}
 .chapter-item{
   display:flex;align-items:center;gap:12px;
   background:#fff;border:1px solid #e5e5e5;border-radius:12px;
@@ -597,6 +637,7 @@ body.dark-mode .accent-swatch{border-color:rgba(255,255,255,0.18)}
 body.dark-mode .accent-swatch.active{outline-color:#e9ecf2}
 
 body.dark-mode .chapter-section h3{color:#8a91a3}
+body.dark-mode .chapter-section h3 b{color:#e9ecf2}
 body.dark-mode .chapter-item{background:#1e1e1e;border-color:#2c313c}
 body.dark-mode .chapter-item.active{background:var(--accent-soft-dark);border-color:var(--accent)}
 body.dark-mode .chapter-title{color:#e9ecf2}
@@ -696,7 +737,7 @@ body.dark-mode .card.fullscreen{
 
   <div class="right-top">
     <div class="chapter-section">
-      <h3>歌曲列表</h3>
+      <h3>歌曲列表 <b id="chapterCount">0</b></h3>
       <ul id="chapterList" class="list" style="margin:0;"></ul>
       <div id="chapterEmpty" class="chapter-empty">点击左侧专辑文件后，若包含歌曲信息会显示在这里</div>
     </div>
@@ -857,6 +898,7 @@ body.dark-mode .card.fullscreen{
   var countEl = document.getElementById('count');
   var chapterListEl = document.getElementById('chapterList');
   var chapterEmptyEl = document.getElementById('chapterEmpty');
+  var chapterCountEl = document.getElementById('chapterCount');
   var volumeEl = document.getElementById('volume');
   var volumeValueEl = document.getElementById('volumeValue');
   var modeBtn = document.getElementById('modeBtn');
@@ -1164,15 +1206,115 @@ body.dark-mode .card.fullscreen{
   }
 
   /* ---------------- 放大 / 缩小 ---------------- */
+  var fsHeightAnim = null;
+  var normalCardHeight = 0;
+
+  function prefersReducedMotion() {
+    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+
+  function resetFullscreenAnim() {
+    if (fsHeightAnim) {
+      try { fsHeightAnim.cancel(); } catch (e) {}
+      fsHeightAnim = null;
+    }
+    playerCard.style.height = '';
+    playerCard.style.minHeight = '';
+    playerCard.classList.remove('fs-shrink');
+    document.body.classList.remove('fs-grow', 'fs-collapse', 'fs-head-in');
+    playerCard.classList.remove('fs-anim-out');
+  }
+
+  /* 进入放大：卡片高度从当前高度逐渐增长到全屏高度 */
+  function animateFullscreenExpand(startHeight) {
+    if (!playerCard.animate || prefersReducedMotion()) return;
+    var endHeight = playerCard.offsetHeight;
+    if (!(endHeight > startHeight + 1)) return;
+    document.body.classList.add('fs-grow');
+    playerCard.style.minHeight = '0px';
+    fsHeightAnim = playerCard.animate([
+      { height: startHeight + 'px' },
+      { height: endHeight + 'px' }
+    ], { duration: 320, easing: 'cubic-bezier(.2,.8,.25,1)', fill: 'forwards' });
+    fsHeightAnim.onfinish = function () {
+      var anim = fsHeightAnim;
+      fsHeightAnim = null;
+      playerCard.style.minHeight = '';
+      document.body.classList.remove('fs-grow');
+      if (anim) anim.cancel();
+    };
+  }
+
+  /* 退出放大：卡片高度从全屏高度逐渐减小到普通卡片高度 */
+  function animateFullscreenCollapse(startHeight) {
+    var targetHeight = normalCardHeight;
+    if (!targetHeight || !(startHeight > targetHeight + 1)) {
+      playFullscreenExitAnim();
+      return;
+    }
+    /* 切回普通布局，先隐藏页头，避免布局高度不足导致卡片被裁切 */
+    playerCard.classList.remove('fullscreen');
+    document.body.classList.remove('fullscreen-mode', 'fullscreen-lock');
+    document.body.classList.add('fs-collapse');
+    playerCard.classList.add('fs-shrink');
+    playerCard.style.height = startHeight + 'px';
+    playerCard.style.minHeight = '0px';
+    fsHeightAnim = playerCard.animate([
+      { height: startHeight + 'px' },
+      { height: targetHeight + 'px' }
+    ], { duration: 300, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' });
+    fsHeightAnim.onfinish = function () {
+      var anim = fsHeightAnim;
+      fsHeightAnim = null;
+      playerCard.style.height = '';
+      playerCard.style.minHeight = '';
+      playerCard.classList.remove('fs-shrink');
+      document.body.classList.remove('fs-collapse');
+      document.body.classList.add('fs-head-in');
+      if (anim) anim.cancel();
+    };
+  }
+
+  /* 退出放大的降级动画：缩回普通卡片时淡入 */
+  function playFullscreenExitAnim() {
+    if (prefersReducedMotion()) return;
+    void playerCard.offsetWidth;
+    playerCard.classList.add('fs-anim-out');
+  }
+
+  playerCard.addEventListener('animationend', function (e) {
+    if (e.target === playerCard) {
+      playerCard.classList.remove('fs-anim-out');
+    }
+  });
+  var headEl = document.querySelector('.head');
+  if (headEl) {
+    headEl.addEventListener('animationend', function () {
+      document.body.classList.remove('fs-head-in');
+    });
+  }
   function setFullscreen(on) {
-    playerCard.classList.toggle('fullscreen', on);
-    document.body.classList.toggle('fullscreen-mode', on);
-    document.body.classList.toggle('fullscreen-lock', on);
+    var startHeight = playerCard.offsetHeight;
+    resetFullscreenAnim();
+    var normalHeight = playerCard.offsetHeight;
     fsBtn.innerHTML = on ? ICON_SHRINK : ICON_EXPAND;
     fsBtn.setAttribute('aria-label', on ? '退出放大' : '放大播放控制');
     closeSettingsMenu();
     endVolPressSilently();
     closeItemMenu();
+    if (on) {
+      normalCardHeight = normalHeight;
+      playerCard.classList.add('fullscreen');
+      document.body.classList.add('fullscreen-mode');
+      document.body.classList.add('fullscreen-lock');
+      animateFullscreenExpand(startHeight);
+    } else if (playerCard.animate && !prefersReducedMotion() && normalCardHeight > 0) {
+      animateFullscreenCollapse(startHeight);
+    } else {
+      playerCard.classList.remove('fullscreen');
+      document.body.classList.remove('fullscreen-mode', 'fullscreen-lock');
+      playFullscreenExitAnim();
+    }
   }
   fsBtn.addEventListener('click', function () {
     setFullscreen(!playerCard.classList.contains('fullscreen'));
@@ -1205,6 +1347,25 @@ body.dark-mode .card.fullscreen{
     closeSettingsMenu();
   });
   document.getElementById('closeSettingsBtn').addEventListener('click', closeSettingsMenu);
+
+  /* ---------------- 播放控制按钮按下动画 ---------------- */
+  var pressedCtrlBtn = null;
+  function releaseCtrlBtn() {
+    if (pressedCtrlBtn) {
+      pressedCtrlBtn.classList.remove('btn-pressed');
+      pressedCtrlBtn = null;
+    }
+  }
+  playerCard.addEventListener('pointerdown', function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest('.fs-btn, .tool-btn, .controls button') : null;
+    if (!btn) return;
+    releaseCtrlBtn();
+    pressedCtrlBtn = btn;
+    btn.classList.add('btn-pressed');
+  });
+  document.addEventListener('pointerup', releaseCtrlBtn);
+  document.addEventListener('pointercancel', releaseCtrlBtn);
+  window.addEventListener('blur', releaseCtrlBtn);
 
   /* ---------------- 文件项浮动菜单 ---------------- */
   var menuTrackId = null;
@@ -1799,6 +1960,7 @@ body.dark-mode .card.fullscreen{
   }
 
   function renderChapters() {
+    chapterCountEl.textContent = currentChapters.length;
     chapterListEl.innerHTML = '';
     if (!currentChapters.length) {
       chapterEmptyEl.style.display = 'block';
@@ -1909,8 +2071,18 @@ body.dark-mode .card.fullscreen{
     if (dragState) {
       var el = getTrackEl(dragState.id);
       if (el) {
+        var firstRect = el.getBoundingClientRect();
         el.classList.remove('dragging');
         el.style.transform = '';
+        var lastRect = el.getBoundingClientRect();
+        var dropDx = firstRect.left - lastRect.left;
+        var dropDy = firstRect.top - lastRect.top;
+        if (el.animate && (Math.abs(dropDx) > 1 || Math.abs(dropDy) > 1)) {
+          el.animate([
+            { transform: 'translate(' + dropDx + 'px,' + dropDy + 'px)' },
+            { transform: 'translate(0,0)' }
+          ], { duration: 170, easing: 'cubic-bezier(.2,.8,.25,1)' });
+        }
       }
       document.body.classList.remove('dragging-track');
       dragState = null;
@@ -1932,20 +2104,58 @@ body.dark-mode .card.fullscreen{
       var target = to > from ? to - 1 : to;
       if (target < 0) target = 0;
       if (target !== from) {
+        var tops = captureItemTops();
         var moved = tracks.splice(from, 1)[0];
         tracks.splice(target, 0, moved);
         renderTrackList();
+        animateMovedItems(tops);
       }
     }
     updateDragPosition(x, y);
   }
 
-  function getDropIndex(y, from) {
+  /* 记录各项拖动前的视觉位置，供 FLIP 动画使用 */
+  function captureItemTops() {
+    var tops = {};
     var nodes = listEl.children;
     for (var i = 0; i < nodes.length; i++) {
-      if (i === from) continue;
+      var id = nodes[i].getAttribute('data-id');
+      if (!id) continue;
       var r = nodes[i].getBoundingClientRect();
-      var mid = r.top + r.height / 2;
+      tops[id] = { top: r.top, left: r.left };
+    }
+    return tops;
+  }
+
+  /* 重排后让位置变化的项从旧位置滑到新位置 */
+  function animateMovedItems(tops) {
+    if (!tops) return;
+    var nodes = listEl.children;
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      var id = el.getAttribute('data-id');
+      if (!id || (dragState && id === dragState.id) || !el.animate) continue;
+      var first = tops[id];
+      if (!first) continue;
+      var r = el.getBoundingClientRect();
+      var dx = first.left - r.left;
+      var dy = first.top - r.top;
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+      el.animate([
+        { transform: 'translate(' + dx + 'px,' + dy + 'px)' },
+        { transform: 'translate(0,0)' }
+      ], { duration: 170, easing: 'cubic-bezier(.2,.8,.25,1)' });
+    }
+  }
+
+  function getDropIndex(y, from) {
+    var nodes = listEl.children;
+    /* 用布局位置计算落点，避免被移动动画的 transform 干扰 */
+    var base = listEl.getBoundingClientRect().top - listEl.offsetTop;
+    for (var i = 0; i < nodes.length; i++) {
+      if (i === from) continue;
+      var el = nodes[i];
+      var mid = base + el.offsetTop + el.offsetHeight / 2;
       if (y < mid) return i;
     }
     return nodes.length;

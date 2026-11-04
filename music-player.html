@@ -29,7 +29,7 @@ body{
   padding:14px;
 }
 body.fullscreen-lock{overflow:hidden}
-body.dragging-track{cursor:grabbing;-webkit-user-select:none;user-select:none}
+body.dragging-track{cursor:grabbing;-webkit-user-select:none;user-select:none;touch-action:none}
 .head{flex-shrink:0}
 .head h1{font-size:20px;margin:0 0 4px;font-weight:700;color:#222}
 .head p{margin:0 0 16px;color:#888;font-size:13px}
@@ -104,6 +104,7 @@ input[type=text]:focus{border-color:var(--accent)}
   position:relative;
   z-index:60;
   cursor:grabbing;
+  touch-action:none;
 }
 .info{flex:1;min-width:0}
 .name{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#222}
@@ -1333,6 +1334,7 @@ body.dark-mode .card.fullscreen{
   function closeSettingsMenu() {
     settingsMenu.classList.remove('open');
     settingsBtn.classList.remove('active');
+    resetSettingsSheet();
   }
   settingsBtn.addEventListener('click', function (e) {
     e.stopPropagation();
@@ -1347,6 +1349,112 @@ body.dark-mode .card.fullscreen{
     closeSettingsMenu();
   });
   document.getElementById('closeSettingsBtn').addEventListener('click', closeSettingsMenu);
+
+  /* ---------------- 移动端键盘适配：输入主题颜色时把设置菜单固定在键盘上方 ---------------- */
+  var settingsSheetActive = false;
+  function shouldUseSettingsSheet() {
+    if (window.matchMedia) {
+      if (window.matchMedia('(pointer: coarse)').matches) return true;
+      return window.matchMedia('(max-width: 820px)').matches;
+    }
+    return window.innerWidth <= 820;
+  }
+  function keyboardIsOpen() {
+    return !!(window.visualViewport && window.visualViewport.height < window.innerHeight - 120);
+  }
+  function positionSettingsSheet() {
+    if (!settingsSheetActive) return;
+    var vv = window.visualViewport;
+    var vh = vv ? vv.height : window.innerHeight;
+    var offsetTop = vv ? vv.offsetTop : 0;
+    var margin = 8;
+    var maxH = Math.max(180, vh - margin * 2);
+    settingsMenu.style.maxHeight = maxH + 'px';
+    var menuH = Math.min(settingsMenu.offsetHeight || maxH, maxH);
+    var top = offsetTop + vh - menuH - margin;
+    if (top < offsetTop + margin) top = offsetTop + margin;
+    settingsMenu.style.top = top + 'px';
+  }
+  function revealAccentInput() {
+    if (!settingsSheetActive) return;
+    var menuRect = settingsMenu.getBoundingClientRect();
+    var inputRect = accentInput.getBoundingClientRect();
+    if (inputRect.top < menuRect.top + 8) {
+      settingsMenu.scrollTop += inputRect.top - menuRect.top - 16;
+    } else if (inputRect.bottom > menuRect.bottom - 8) {
+      settingsMenu.scrollTop += inputRect.bottom - menuRect.bottom + 16;
+    }
+  }
+  function openSettingsSheet() {
+    if (settingsSheetActive) {
+      positionSettingsSheet();
+      return;
+    }
+    settingsSheetActive = true;
+    settingsMenu.classList.add('keyboard-open');
+    settingsMenu.style.position = 'fixed';
+    settingsMenu.style.left = '12px';
+    settingsMenu.style.right = '12px';
+    settingsMenu.style.bottom = 'auto';
+    settingsMenu.style.marginBottom = '0';
+    settingsMenu.style.overflowY = 'auto';
+    settingsMenu.style.zIndex = '600';
+    positionSettingsSheet();
+  }
+  function resetSettingsSheet() {
+    if (settingsSheetResetTimer) {
+      clearTimeout(settingsSheetResetTimer);
+      settingsSheetResetTimer = null;
+    }
+    if (!settingsSheetActive) return;
+    settingsSheetActive = false;
+    settingsMenu.classList.remove('keyboard-open');
+    settingsMenu.style.position = '';
+    settingsMenu.style.left = '';
+    settingsMenu.style.right = '';
+    settingsMenu.style.top = '';
+    settingsMenu.style.bottom = '';
+    settingsMenu.style.marginBottom = '';
+    settingsMenu.style.maxHeight = '';
+    settingsMenu.style.overflowY = '';
+    settingsMenu.style.zIndex = '';
+  }
+  var settingsSheetResetTimer = null;
+  accentInput.addEventListener('focus', function () {
+    if (settingsSheetResetTimer) {
+      clearTimeout(settingsSheetResetTimer);
+      settingsSheetResetTimer = null;
+    }
+    if (!shouldUseSettingsSheet()) return;
+    openSettingsSheet();
+    setTimeout(positionSettingsSheet, 120);
+    setTimeout(function () {
+      positionSettingsSheet();
+      revealAccentInput();
+    }, 320);
+  });
+  accentInput.addEventListener('blur', function () {
+    if (settingsSheetResetTimer) clearTimeout(settingsSheetResetTimer);
+    /* 延迟复位，避免点击应用/最近颜色等按钮时菜单先跳回原位导致点不到 */
+    settingsSheetResetTimer = setTimeout(function () {
+      settingsSheetResetTimer = null;
+      resetSettingsSheet();
+    }, 180);
+  });
+  function onSettingsViewportChange() {
+    if (document.activeElement !== accentInput) return;
+    if (!settingsSheetActive) {
+      if (!keyboardIsOpen()) return;
+      openSettingsSheet();
+    }
+    positionSettingsSheet();
+    revealAccentInput();
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', onSettingsViewportChange);
+    window.visualViewport.addEventListener('scroll', onSettingsViewportChange);
+  }
+  window.addEventListener('resize', onSettingsViewportChange);
 
   /* ---------------- 播放控制按钮按下动画 ---------------- */
   var pressedCtrlBtn = null;
@@ -2176,6 +2284,9 @@ body.dark-mode .card.fullscreen{
   function preventTouchScroll(e) {
     if (dragState && e.cancelable) e.preventDefault();
   }
+  /* 在触摸开始前就注册非被动监听：移动端浏览器才会等待 JS 判断是否拖动，
+     否则长按后竖向滑动会先触发原生滚动并发出 pointercancel */
+  listEl.addEventListener('touchmove', preventTouchScroll, { passive: false });
 
   /* 找到列表所在的可滚动容器；没有则用页面滚动 */
   function findScrollBox() {

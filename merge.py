@@ -1,7 +1,9 @@
 import argparse
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from mutagen.mp3 import MP3
@@ -35,18 +37,26 @@ def read_track_tag(mp3_path: Path):
         return None
 
 
-def sort_key_by_metadata(path: Path):
-    title = read_title_tag(path)
-    m = re.search(r"#(\d+)", title)
-    if m:
-        return (0, int(m.group(1)), path.name.lower())
+def sort_key_by_metadata(path: Path, source: str = "track"):
+    """排序依据。
+    source="track"   ：优先 ID3 音轨号 TRCK，缺失时按文件名；
+    source="filename"：始终按文件名（不区分大小写）。
+    """
+    if source == "filename":
+        return (0, 0, path.name.lower())
     track = read_track_tag(path)
     if track is not None:
-        return (1, track, path.name.lower())
-    return (2, 0, path.name.lower())
+        return (0, track, path.name.lower())
+    return (1, 0, path.name.lower())
 
 
-def chapter_title_of(path: Path) -> str:
+def chapter_title_of(path: Path, source: str = "metadata") -> str:
+    """返回章节标题。
+    source="metadata"：优先用 ID3 标题，缺失时回退文件名；
+    source="filename"：始终用文件名（去掉 .mp3 后缀）。
+    """
+    if source == "filename":
+        return path.stem
     title = read_title_tag(path)
     return title if title else path.stem
 
@@ -84,7 +94,97 @@ def generate_concat_list(mp3_files, output_path: Path):
     output_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-# ---------------- 新增：歌词处理 ----------------
+# ---------------- 子进程调用：统一处理编码 ----------------
+
+def run_ffmpeg(cmd, check=True):
+    """统一处理 ffmpeg 子进程调用，避免 Windows 下 GBK 解码错误。"""
+    return subprocess.run(
+        cmd,
+        check=check,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+
+# ---------------- 统一编码参数 ----------------
+
+def get_audio_params(path: Path):
+    """返回 (sample_rate, channels, bitrate_kbps)；失败返回 None。"""
+    try:
+        audio = MP3(path)
+        info = audio.info
+        return (info.sample_rate, info.channels, int(info.bitrate // 1000))
+    except Exception:
+        return None
+
+
+def needs_normalization(mp3_files) -> bool:
+    """检查所有文件的 (采样率, 声道数, 平均比特率) 是否一致。"""
+    params = [get_audio_params(p) for p in mp3_files]
+    if any(p is None for p in params):
+        print("  警告：部分文件无法读取音频参数，将强制归一化")
+        return True
+    first = params[0]
+    for p, param in zip(mp3_files[1:], params[1:]):
+        if param != first:
+            return True
+    return False
+
+
+def infer_normalize_params(mp3_files):
+    """根据源文件推断归一化目标参数，返回 (bitrate_str, sample_rate, channels)。
+    取各维度的最大值，保证不低于任何源文件。
+    """
+    params = [get_audio_params(p) for p in mp3_files]
+    params = [p for p in params if p is not None]
+    if not params:
+        return ("192k", 44100, 2)
+    max_sr = max(p[0] for p in params)
+    max_ch = max(p[1] for p in params)
+    max_br = max(p[2] for p in params)
+    return (f"{max_br}k", max_sr, max_ch)
+
+
+def normalize_file(src: Path, dst: Path, bitrate: str,
+                   sample_rate: int, channels: int, codec: str):
+    """把单个 MP3 重新编码为统一参数。"""
+    cmd = [
+        "ffmpeg", "-y", "-i", str(src),
+        "-map", "0:a",
+        "-c:a", codec,
+        "-b:a", bitrate,
+        "-ar", str(sample_rate),
+        "-ac", str(channels),
+        "-map_metadata", "-1",
+        str(dst),
+    ]
+    try:
+        run_ffmpeg(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"  错误：归一化失败 {src.name}")
+        print("STDERR:", e.stderr)
+        raise
+    except FileNotFoundError:
+        print("错误：找不到 ffmpeg，请确认已安装并在 PATH 中")
+        raise
+
+
+def normalize_all(mp3_files, temp_dir: Path, bitrate: str,
+                  sample_rate: int, channels: int, codec: str):
+    """把所有文件重新编码到 temp_dir，返回新路径列表（顺序与输入一致）。"""
+    normalized = []
+    total = len(mp3_files)
+    for idx, src in enumerate(mp3_files, 1):
+        dst = temp_dir / f"{idx:04d}_{src.name}"
+        print(f"  归一化 {idx}/{total}: {src.name}")
+        normalize_file(src, dst, bitrate, sample_rate, channels, codec)
+        normalized.append(dst)
+    return normalized
+
+
+# ---------------- 歌词处理 ----------------
 
 LRC_TIME_RE = re.compile(r"\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]")
 LRC_META_RE = re.compile(r"^\[(ti|ar|al|by|offset|length|re|ve|tool):", re.IGNORECASE)
@@ -227,15 +327,20 @@ def write_sylt_to_output(output_path: Path, sylt_data, lang="chi"):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="把文件夹下的 MP3 按 ID3 元数据中的 # 数字（或音轨号）排序后，"
-                    "合并为一个带章节帧的 MP3，并可选地把每首歌的歌词按章节时间偏移"
-                    "合并成一条 SYLT 同步歌词。",
+        description="把文件夹下的 MP3 排序后合并为一个带章节帧的 MP3，"
+                    "并可选地把每首歌的歌词按章节时间偏移合并成一条 SYLT 同步歌词。"
+                    "合并前可自动统一源文件的编码参数，避免比特率/采样率不一致导致合并失败。",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""示例：
   python merge.py D:\\music 合辑.mp3
   python merge.py ./music ./out/合辑.mp3 --title "我的精选集"
+  python merge.py ./music 合辑.mp3 --sort-by filename
   python merge.py ./music 合辑.mp3 --chapter-markers --lyrics-lang chi
   python merge.py ./music 合辑.mp3 --no-lyrics
+  python merge.py ./music 合辑.mp3 --chapter-title-source filename
+  python merge.py ./music 合辑.mp3 --normalize always --normalize-bitrate 128k
+  python merge.py ./music 合辑.mp3 --normalize never
+  python merge.py ./music 合辑.mp3 --normalize always --normalize-channels 1 --normalize-bitrate 96k
 """
     )
     parser.add_argument("folder", help="要扫描 MP3 的文件夹路径")
@@ -247,6 +352,45 @@ def parse_args():
                         help="在每章歌词前插入一行章节标题（便于在歌词中看到分段）")
     parser.add_argument("--no-lyrics", action="store_true",
                         help="跳过歌词处理，只合并音频与章节")
+    parser.add_argument(
+        "--chapter-title-source",
+        choices=["metadata", "filename"],
+        default="metadata",
+        help="章节标题命名来源：metadata=ID3 标题（默认，缺失时回退文件名），"
+             "filename=文件名（去 .mp3 后缀）"
+    )
+    parser.add_argument(
+        "--sort-by",
+        choices=["track", "filename"],
+        default="track",
+        help="合并排序方式：track=ID3 音轨号优先（默认，缺失时按文件名），"
+             "filename=始终按文件名"
+    )
+    parser.add_argument(
+        "--normalize",
+        choices=["auto", "always", "never"],
+        default="auto",
+        help="合并前是否统一源文件编码参数：auto=参数不一致时才归一化（默认），"
+             "always=总是归一化，never=从不归一化（直接流复制）"
+    )
+    parser.add_argument(
+        "--normalize-bitrate", default=None,
+        help="归一化目标比特率（默认自动取源文件最大值，如 320k；"
+             "也可显式写 128k / 256k / 320k）"
+    )
+    parser.add_argument(
+        "--normalize-sample-rate", type=int, default=None,
+        help="归一化目标采样率（默认自动取源文件最大值，如 44100）"
+    )
+    parser.add_argument(
+        "--normalize-channels", type=int, default=None,
+        help="归一化目标声道数（默认自动取源文件最大值，如 2；"
+             "有声书可显式指定 1）"
+    )
+    parser.add_argument(
+        "--normalize-codec", default="libmp3lame",
+        help="归一化使用的音频编码器（默认 libmp3lame）"
+    )
     return parser.parse_args()
 
 
@@ -278,70 +422,116 @@ def main():
         print(f"错误：在 {folder} 下没有找到 MP3 文件")
         sys.exit(1)
 
-    mp3_files.sort(key=sort_key_by_metadata)
+    mp3_files.sort(key=lambda p: sort_key_by_metadata(p, args.sort_by))
 
     print(f"\n文件夹: {folder}")
     print(f"输出文件: {output_path}")
-    print("将按以下顺序合并（依据 ID3 元数据中的 # 数字 / 音轨号）：")
+    print(f"排序方式: {args.sort_by}")
+    print(f"章节标题来源: {args.chapter_title_source}")
+    if args.sort_by == "filename":
+        print("将按以下顺序合并（按文件名）：")
+    else:
+        print("将按以下顺序合并（依据 ID3 音轨号，缺失时按文件名）：")
     for i, p in enumerate(mp3_files, 1):
-        title = read_title_tag(p)
-        m = re.search(r"#(\d+)", title)
         track = read_track_tag(p)
-        if m:
-            source = f"标题 #{m.group(1)}"
-        elif track is not None:
-            source = f"音轨号 {track}"
+        if args.sort_by == "filename":
+            source = "按文件名"
         else:
-            source = "无 # / 无音轨号"
-        print(f"  {i}. {p.name}  [{source}]  -> 章节名: {chapter_title_of(p)}")
+            source = f"音轨号 {track}" if track is not None else "无音轨号，按文件名"
+        print(f"  {i}. {p.name}  [{source}]  -> 章节名: "
+              f"{chapter_title_of(p, args.chapter_title_source)}")
 
-    # 计算章节
-    chapters = []
-    current_start = 0
-    for mp3_path in mp3_files:
-        duration_ms = get_mp3_duration_ms(mp3_path)
-        current_end = current_start + duration_ms
-        chapters.append((chapter_title_of(mp3_path), current_start, current_end))
-        current_start = current_end
-
+    temp_dir = None
     metadata_path = folder / "chapters_temp.ffmeta"
     concat_list_path = folder / "concat_list_temp.txt"
-    generate_ffmetadata(chapters, metadata_path, args.title)
-    generate_concat_list(mp3_files, concat_list_path)
 
-    cmd = [
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", str(concat_list_path),
-        "-i", str(metadata_path),
-        "-map", "0:a",
-        "-map_metadata", "1",
-        "-map_chapters", "1",
-        "-c", "copy",
-        str(output_path)
-    ]
-
-    print("\n正在执行 FFmpeg 命令：")
-    print("  " + " ".join(cmd))
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
-        print(f"\n合并完成，输出文件：{output_path}")
-    except subprocess.CalledProcessError as e:
-        print("\nFFmpeg 执行失败：")
-        print("STDOUT:", e.stdout)
-        print("STDERR:", e.stderr)
-        sys.exit(1)
+        # ---- 决定是否归一化 ----
+        if args.normalize == "always":
+            use_normalize = True
+        elif args.normalize == "never":
+            use_normalize = False
+        else:
+            use_normalize = needs_normalization(mp3_files)
+
+        if use_normalize:
+            inferred_br, inferred_sr, inferred_ch = infer_normalize_params(mp3_files)
+            bitrate = args.normalize_bitrate or inferred_br
+            sample_rate = args.normalize_sample_rate or inferred_sr
+            channels = args.normalize_channels or inferred_ch
+
+            print(f"\n统一编码参数：{bitrate} / "
+                  f"{sample_rate}Hz / {channels}ch / {args.normalize_codec}")
+            if args.normalize_bitrate is None:
+                print(f"  （比特率自动取源文件最大值：{bitrate}）")
+            if args.normalize_sample_rate is None:
+                print(f"  （采样率自动取源文件最大值：{sample_rate}Hz）")
+            if args.normalize_channels is None:
+                print(f"  （声道数自动取源文件最大值：{channels}）")
+
+            temp_dir = Path(tempfile.mkdtemp(prefix="mp3_merge_norm_"))
+            merge_files = normalize_all(
+                mp3_files, temp_dir,
+                bitrate=bitrate,
+                sample_rate=sample_rate,
+                channels=channels,
+                codec=args.normalize_codec,
+            )
+        else:
+            print("\n源文件编码参数一致，直接流复制合并。")
+            merge_files = mp3_files
+
+        # ---- 计算章节（基于实际参与合并的文件时长） ----
+        chapters = []
+        current_start = 0
+        for src_path, merge_path in zip(mp3_files, merge_files):
+            duration_ms = get_mp3_duration_ms(merge_path)
+            current_end = current_start + duration_ms
+            chapters.append((
+                chapter_title_of(src_path, args.chapter_title_source),
+                current_start,
+                current_end,
+            ))
+            current_start = current_end
+
+        generate_ffmetadata(chapters, metadata_path, args.title)
+        generate_concat_list(merge_files, concat_list_path)
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", str(concat_list_path),
+            "-i", str(metadata_path),
+            "-map", "0:a",
+            "-map_metadata", "1",
+            "-map_chapters", "1",
+            "-c", "copy",
+            str(output_path)
+        ]
+
+        print("\n正在执行 FFmpeg 命令：")
+        print("  " + " ".join(cmd))
+        try:
+            run_ffmpeg(cmd, check=True)
+            print(f"\n合并完成，输出文件：{output_path}")
+        except subprocess.CalledProcessError as e:
+            print("\nFFmpeg 执行失败：")
+            print("STDOUT:", e.stdout)
+            print("STDERR:", e.stderr)
+            sys.exit(1)
+
+        # ---- 合并歌词为 SYLT ----
+        if args.no_lyrics:
+            return
+        print("\n正在处理歌词（SYLT）...")
+        sylt_data = build_sylt_data(mp3_files, chapters,
+                                    with_markers=args.chapter_markers)
+        write_sylt_to_output(output_path, sylt_data, lang=args.lyrics_lang)
     finally:
         metadata_path.unlink(missing_ok=True)
         concat_list_path.unlink(missing_ok=True)
-
-    # ---- 新增：合并歌词为 SYLT ----
-    if args.no_lyrics:
-        return
-    print("\n正在处理歌词（SYLT）...")
-    sylt_data = build_sylt_data(mp3_files, chapters,
-                                with_markers=args.chapter_markers)
-    write_sylt_to_output(output_path, sylt_data, lang=args.lyrics_lang)
+        if temp_dir is not None:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

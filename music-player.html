@@ -30,9 +30,6 @@ body{
 }
 body.fullscreen-lock{overflow:hidden}
 body.dragging-track{cursor:grabbing;-webkit-user-select:none;user-select:none;touch-action:none}
-.head{flex-shrink:0}
-.head h1{font-size:20px;margin:0 0 4px;font-weight:700;color:#222}
-.head p{margin:0 0 16px;color:#888;font-size:13px}
 
 .layout{
   flex:1;min-height:0;
@@ -55,7 +52,7 @@ body.dragging-track .left-top{overflow:hidden}
 .right-top{grid-column:2;grid-row:1;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch}
 .right-bottom{grid-column:2;grid-row:2;display:flex;flex-direction:column;justify-content:flex-end;min-height:0}
 
-.card{background:#fff;border:1px solid #e5e5e5;border-radius:16px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);width:100%}
+.card{background:#fff;border:1px solid var(--accent);border-radius:16px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);width:100%}
 .lbl{display:block;font-size:13px;color:#888;margin:10px 0 6px}
 .lbl.first{margin-top:0}
 input[type=text]{
@@ -323,6 +320,21 @@ input[type=text]:focus{border-color:var(--accent)}
 
 /* 自定义主题颜色 */
 .settings-group{margin-bottom:14px}
+
+/* 设置菜单底部：关于 */
+.settings-about-btn{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  width:100%;margin:0;padding:12px 2px 0;
+  border:0;border-top:1px solid #eee;background:transparent;
+  color:#666;font-size:13px;font-family:inherit;text-align:left;cursor:pointer;
+  -webkit-appearance:none;appearance:none;
+}
+.settings-about-btn:active{color:var(--accent)}
+.settings-about-arrow{font-size:18px;line-height:1;color:#bbb}
+.info-list{
+  margin:0;padding-left:18px;
+  color:#555;font-size:14px;line-height:1.8;
+}
 .accent-row{display:flex;align-items:center;gap:8px}
 #accentInput{
   flex:1;min-width:0;width:auto;
@@ -398,7 +410,6 @@ input[type=text]:focus{border-color:var(--accent)}
 
 /* ==================== 放大模式 ==================== */
 body.fullscreen-mode{padding:0;background:#f5f5f5}
-body.fullscreen-mode .head{display:none}
 body.fullscreen-mode .layout{
   grid-template-columns:1fr 1fr;
   grid-template-rows:minmax(0,1fr);
@@ -427,7 +438,7 @@ body.fullscreen-mode .right-bottom{
   inset:auto;
   margin:0;
   border-radius:16px;
-  border:1px solid #e5e5e5;
+  border:1px solid var(--accent);
   box-shadow:0 1px 3px rgba(0,0,0,0.06);
   padding:28px 24px;
   display:flex;
@@ -440,9 +451,27 @@ body.fullscreen-mode .right-bottom{
 }
 .player-stage{display:none}
 .card.fullscreen .player-stage{
-  display:block;
+  display:flex;align-items:center;justify-content:center;
   flex:1 1 auto;
   min-height:0;
+}
+.record-icon{
+  width:clamp(128px,32vmin,320px);
+  height:clamp(128px,32vmin,320px);
+  padding:0;border:0;background:transparent;
+  color:var(--accent);opacity:.9;
+  display:flex;align-items:center;justify-content:center;
+  animation:record-spin 5s linear infinite;
+  animation-play-state:paused;
+}
+.record-icon svg{width:100%;height:100%;display:block}
+.record-icon.playing{animation-play-state:running}
+/* 放大/缩小动画过程中中间区域高度不足，先隐藏唱片避免溢出 */
+body.fs-grow .record-icon,
+.card.fs-shrink .record-icon{display:none}
+@keyframes record-spin{
+  from{transform:rotate(0deg)}
+  to{transform:rotate(360deg)}
 }
 .card.fullscreen .now-playing{
   font-size:26px;font-weight:600;line-height:1.35;
@@ -462,20 +491,14 @@ body.fullscreen-mode .right-bottom{
 .card.fs-anim-out{animation:fs-card-out .22s ease-out;}
 /* 进入放大时让卡片停靠在右侧列底部，高度自下向上增长 */
 body.fullscreen-mode.fs-grow .right-bottom{justify-content:flex-end}
-/* 退出放大时先回到普通布局但隐藏页头，让卡片从全屏高度开始向下收缩 */
-body.fs-collapse .head{display:none}
+/* 退出放大时先回到普通布局，让卡片从全屏高度开始向下收缩 */
 body.fs-collapse .layout{row-gap:0}
 body.fs-collapse .right-top{overflow:hidden}
 .card.fs-shrink{display:flex;flex-direction:column;justify-content:flex-start}
-.card.fs-shrink .player-stage{display:block;flex:1 1 auto;min-height:0}
-@keyframes fs-head-in{
-  from{opacity:0;}
-  to{opacity:1;}
-}
-body.fs-head-in .head{animation:fs-head-in .24s ease-out;}
+.card.fs-shrink .player-stage{display:flex;align-items:center;justify-content:center;flex:1 1 auto;min-height:0}
 @media (prefers-reduced-motion: reduce){
   .card.fs-anim-out{animation:none;}
-  body.fs-head-in .head{animation:none;}
+  .record-icon{animation:none;}
   .fs-btn, .tool-btn, .controls button{transition:none;}
   .fs-btn.btn-pressed,
   .tool-btn.btn-pressed,
@@ -549,6 +572,11 @@ body.fs-head-in .head{animation:fs-head-in .24s ease-out;}
   padding:18px;box-shadow:0 8px 24px rgba(0,0,0,.15);
 }
 .dialog h3{margin:0 0 14px;font-size:16px;color:#222}
+.info-header{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:10px;margin-bottom:14px;
+}
+.info-header h3{margin:0}
 .dialog input{
   width:100%;padding:12px;border-radius:10px;border:1px solid #d5d5d5;
   font-size:16px;outline:none;background:#fff;color:#222;
@@ -560,11 +588,9 @@ body.fs-head-in .head{animation:fs-head-in .24s ease-out;}
 
 /* ==================== 深色模式 ==================== */
 body.dark-mode{background:#121212;color:#e9ecf2}
-body.dark-mode .head h1{color:#e9ecf2}
-body.dark-mode .head p{color:#8a91a3}
 
 body.dark-mode .card{
-  background:#1e1e1e;border-color:#2c313c;
+  background:#1e1e1e;border-color:var(--accent);
   box-shadow:0 1px 3px rgba(0,0,0,0.4);
 }
 body.dark-mode .item{background:#1e1e1e;border-color:#2c313c}
@@ -637,6 +663,11 @@ body.dark-mode #accentInput.invalid{border-color:#ef4444}
 body.dark-mode .accent-swatch{border-color:rgba(255,255,255,0.18)}
 body.dark-mode .accent-swatch.active{outline-color:#e9ecf2}
 
+body.dark-mode .settings-about-btn{color:#a8afbd;border-top-color:#2c313c}
+body.dark-mode .settings-about-btn:active{color:var(--accent-light)}
+body.dark-mode .settings-about-arrow{color:#6d7482}
+body.dark-mode .info-list{color:#b8bfcc}
+
 body.dark-mode .chapter-section h3{color:#8a91a3}
 body.dark-mode .chapter-section h3 b{color:#e9ecf2}
 body.dark-mode .chapter-item{background:#1e1e1e;border-color:#2c313c}
@@ -667,7 +698,7 @@ body.dark-mode.fullscreen-mode .right-top{
 }
 body.dark-mode.fullscreen-mode .right-bottom{background:#121212}
 body.dark-mode .card.fullscreen{
-  background:#1e1e1e;border-color:#2c313c;box-shadow:none;
+  background:#1e1e1e;border-color:var(--accent);box-shadow:none;
 }
 
 @media (max-width:820px){
@@ -712,11 +743,6 @@ body.dark-mode .card.fullscreen{
 </style>
 </head>
 <body>
-
-<div class="head">
-  <h1>MP3 专辑播放器</h1>
-  <p>支持 file:/// 地址持久化 · 本机文件导入 · 自动解析 CHAP 章节</p>
-</div>
 
 <div class="layout">
   <div class="left-panel">
@@ -772,6 +798,11 @@ body.dark-mode .card.fullscreen{
           <span class="settings-label" style="margin:0;">定时到点后播完当前歌曲</span>
           <button type="button" class="theme-switch" id="sleepFinishToggle" role="switch" aria-checked="false" aria-label="定时到点后播完当前歌曲"></button>
         </div>
+
+        <button type="button" class="settings-about-btn" id="aboutBtn">
+          <span>关于与使用说明</span>
+          <span class="settings-about-arrow" aria-hidden="true">›</span>
+        </button>
       </div>
 
       <div class="player-header">
@@ -782,8 +813,12 @@ body.dark-mode .card.fullscreen{
         <span class="fs-spacer" aria-hidden="true"></span>
       </div>
 
-      <!-- 放大模式下的中部留白区，后续可放封面 / 歌词等内容 -->
-      <div class="player-stage" aria-hidden="true"></div>
+      <!-- 放大模式下的中部留白区，放唱片图标 -->
+      <div class="player-stage">
+        <div id="recordIcon" class="record-icon" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -4 32 32" fill="currentColor"><path fill="none" d="M0 0h24v24H0z"></path><circle cx="12" cy="12" r="15" fill="none" stroke="currentColor" stroke-width="0.4"></circle><path d="M13 9.17071C12.6872 9.06015 12.3506 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15C13.6569 15 15 13.6569 15 12V2.4578C19.0571 3.73207 22 7.52236 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C12.3375 2 12.6711 2.01672 13 2.04938V9.17071Z"></path></svg>
+        </div>
+      </div>
 
       <div class="toolbar-row">
         <div class="vol-wrap">
@@ -851,6 +886,24 @@ body.dark-mode .card.fullscreen{
   </div>
 </div>
 
+<!-- 关于与使用说明 -->
+<div id="infoOverlay" class="overlay center" style="display:none;">
+  <div class="dialog info-dialog">
+    <div class="info-header">
+      <h3>MP3 专辑播放器</h3>
+      <button type="button" class="settings-close-btn" id="infoCloseBtn" aria-label="关闭">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill="none" d="M0 0h24v24H0z"></path><path d="M11.9997 10.5865L16.9495 5.63672L18.3637 7.05093L13.4139 12.0007L18.3637 16.9504L16.9495 18.3646L11.9997 13.4149L7.04996 18.3646L5.63574 16.9504L10.5855 12.0007L5.63574 7.05093L7.04996 5.63672L11.9997 10.5865Z"></path></svg>
+      </button>
+    </div>
+    <ul class="info-list">
+      <li>支持 file:/// 地址持久化</li>
+      <li>本机文件导入，关闭页面后失效</li>
+      <li>自动解析 MP3 内嵌 CHAP 章节</li>
+      <li>设置与播放数据仅保存在本机浏览器</li>
+    </ul>
+  </div>
+</div>
+
 <script>
 (function () {
   'use strict';
@@ -886,6 +939,7 @@ body.dark-mode .card.fullscreen{
 
   var audio = document.getElementById('audio');
   var playerCard = document.getElementById('playerCard');
+  var recordIcon = document.getElementById('recordIcon');
   var fsBtn = document.getElementById('fsBtn');
   var progressEl = document.getElementById('progress');
   var currentTimeEl = document.getElementById('currentTime');
@@ -1222,7 +1276,7 @@ body.dark-mode .card.fullscreen{
     playerCard.style.height = '';
     playerCard.style.minHeight = '';
     playerCard.classList.remove('fs-shrink');
-    document.body.classList.remove('fs-grow', 'fs-collapse', 'fs-head-in');
+    document.body.classList.remove('fs-grow', 'fs-collapse');
     playerCard.classList.remove('fs-anim-out');
   }
 
@@ -1253,7 +1307,7 @@ body.dark-mode .card.fullscreen{
       playFullscreenExitAnim();
       return;
     }
-    /* 切回普通布局，先隐藏页头，避免布局高度不足导致卡片被裁切 */
+    /* 切回普通布局，让卡片从全屏高度开始向下收缩 */
     playerCard.classList.remove('fullscreen');
     document.body.classList.remove('fullscreen-mode', 'fullscreen-lock');
     document.body.classList.add('fs-collapse');
@@ -1271,7 +1325,6 @@ body.dark-mode .card.fullscreen{
       playerCard.style.minHeight = '';
       playerCard.classList.remove('fs-shrink');
       document.body.classList.remove('fs-collapse');
-      document.body.classList.add('fs-head-in');
       if (anim) anim.cancel();
     };
   }
@@ -1288,12 +1341,6 @@ body.dark-mode .card.fullscreen{
       playerCard.classList.remove('fs-anim-out');
     }
   });
-  var headEl = document.querySelector('.head');
-  if (headEl) {
-    headEl.addEventListener('animationend', function () {
-      document.body.classList.remove('fs-head-in');
-    });
-  }
   function setFullscreen(on) {
     var startHeight = playerCard.offsetHeight;
     resetFullscreenAnim();
@@ -1349,6 +1396,19 @@ body.dark-mode .card.fullscreen{
     closeSettingsMenu();
   });
   document.getElementById('closeSettingsBtn').addEventListener('click', closeSettingsMenu);
+
+  var aboutBtn = document.getElementById('aboutBtn');
+  var infoOverlay = document.getElementById('infoOverlay');
+  aboutBtn.addEventListener('click', function () {
+    closeSettingsMenu();
+    infoOverlay.style.display = 'flex';
+  });
+  document.getElementById('infoCloseBtn').addEventListener('click', function () {
+    infoOverlay.style.display = 'none';
+  });
+  infoOverlay.addEventListener('click', function (e) {
+    if (e.target === this) infoOverlay.style.display = 'none';
+  });
 
   /* ---------------- 移动端键盘适配：输入主题颜色时把设置菜单固定在键盘上方 ---------------- */
   var settingsSheetActive = false;
@@ -2673,11 +2733,13 @@ body.dark-mode .card.fullscreen{
   }
 
   audio.addEventListener('play', function () {
+    recordIcon.classList.add('playing');
     playBtn.innerHTML = SVG_PAUSE;
     playBtn.setAttribute('aria-label', '暂停');
     requestWakeLock();
   });
   audio.addEventListener('pause', function () {
+    recordIcon.classList.remove('playing');
     playBtn.innerHTML = SVG_PLAY;
     playBtn.setAttribute('aria-label', '播放');
   });

@@ -1343,7 +1343,7 @@ body.dark-mode .card.fullscreen{
     if (settingsMenu.classList.contains('open')) closeSettingsMenu();
     else openSettingsMenu();
   });
-  document.addEventListener('click', function (e) {
+  document.addEventListener('pointerdown', function (e) {
     if (!settingsMenu.classList.contains('open')) return;
     if (settingsMenu.contains(e.target) || settingsBtn.contains(e.target)) return;
     closeSettingsMenu();
@@ -1352,6 +1352,8 @@ body.dark-mode .card.fullscreen{
 
   /* ---------------- 移动端键盘适配：输入主题颜色时把设置菜单固定在键盘上方 ---------------- */
   var settingsSheetActive = false;
+  var settingsSheetTimer = null;
+  var settingsSheetResetTimer = null;
   function shouldUseSettingsSheet() {
     if (window.matchMedia) {
       if (window.matchMedia('(pointer: coarse)').matches) return true;
@@ -1402,6 +1404,10 @@ body.dark-mode .card.fullscreen{
     positionSettingsSheet();
   }
   function resetSettingsSheet() {
+    if (settingsSheetTimer) {
+      clearTimeout(settingsSheetTimer);
+      settingsSheetTimer = null;
+    }
     if (settingsSheetResetTimer) {
       clearTimeout(settingsSheetResetTimer);
       settingsSheetResetTimer = null;
@@ -1419,19 +1425,32 @@ body.dark-mode .card.fullscreen{
     settingsMenu.style.overflowY = '';
     settingsMenu.style.zIndex = '';
   }
-  var settingsSheetResetTimer = null;
+  /* 等本次点击/触摸结束、键盘开始弹出后再切换成固定面板，
+     避免菜单在手指抬起前移动导致点击落空或设置菜单被误关闭 */
+  function scheduleSettingsSheet() {
+    if (settingsSheetActive) {
+      positionSettingsSheet();
+      return;
+    }
+    if (settingsSheetTimer) return;
+    settingsSheetTimer = setTimeout(function () {
+      settingsSheetTimer = null;
+      if (document.activeElement !== accentInput) return;
+      openSettingsSheet();
+      setTimeout(positionSettingsSheet, 80);
+      setTimeout(function () {
+        positionSettingsSheet();
+        revealAccentInput();
+      }, 280);
+    }, 220);
+  }
   accentInput.addEventListener('focus', function () {
     if (settingsSheetResetTimer) {
       clearTimeout(settingsSheetResetTimer);
       settingsSheetResetTimer = null;
     }
     if (!shouldUseSettingsSheet()) return;
-    openSettingsSheet();
-    setTimeout(positionSettingsSheet, 120);
-    setTimeout(function () {
-      positionSettingsSheet();
-      revealAccentInput();
-    }, 320);
+    scheduleSettingsSheet();
   });
   accentInput.addEventListener('blur', function () {
     if (settingsSheetResetTimer) clearTimeout(settingsSheetResetTimer);
@@ -1445,7 +1464,8 @@ body.dark-mode .card.fullscreen{
     if (document.activeElement !== accentInput) return;
     if (!settingsSheetActive) {
       if (!keyboardIsOpen()) return;
-      openSettingsSheet();
+      scheduleSettingsSheet();
+      return;
     }
     positionSettingsSheet();
     revealAccentInput();
@@ -2215,11 +2235,28 @@ body.dark-mode .card.fullscreen{
         var tops = captureItemTops();
         var moved = tracks.splice(from, 1)[0];
         tracks.splice(target, 0, moved);
-        renderTrackList();
+        moveTrackNode(dragState.id, from, target);
         animateMovedItems(tops);
       }
     }
     updateDragPosition(x, y);
+  }
+
+  /* 只移动被拖动项以外的节点，让拖动项的 DOM 节点保持不动，
+     避免重新渲染导致移动端触摸指针捕获丢失、越过其他项时拖动中断 */
+  function moveTrackNode(id, from, target) {
+    var el = getTrackEl(id);
+    if (!el) return;
+    var kids = listEl.children;
+    if (target > from) {
+      for (var i = from + 1; i <= target; i++) {
+        listEl.insertBefore(kids[i], el);
+      }
+    } else if (target < from) {
+      for (var j = from - 1; j >= target; j--) {
+        listEl.insertBefore(kids[j], el.nextSibling);
+      }
+    }
   }
 
   /* 记录各项拖动前的视觉位置，供 FLIP 动画使用 */
@@ -2245,11 +2282,15 @@ body.dark-mode .card.fullscreen{
       if (!id || (dragState && id === dragState.id) || !el.animate) continue;
       var first = tops[id];
       if (!first) continue;
+      if (el._flipAnim) {
+        try { el._flipAnim.cancel(); } catch (e) {}
+        el._flipAnim = null;
+      }
       var r = el.getBoundingClientRect();
       var dx = first.left - r.left;
       var dy = first.top - r.top;
       if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
-      el.animate([
+      el._flipAnim = el.animate([
         { transform: 'translate(' + dx + 'px,' + dy + 'px)' },
         { transform: 'translate(0,0)' }
       ], { duration: 170, easing: 'cubic-bezier(.2,.8,.25,1)' });

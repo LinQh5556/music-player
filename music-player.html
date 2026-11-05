@@ -785,6 +785,11 @@ body.dark-mode .card.fullscreen{
           <button type="button" class="theme-switch" id="themeToggle" role="switch" aria-checked="false" aria-label="深色模式"></button>
         </div>
 
+        <div class="theme-row">
+          <span class="settings-label" style="margin:0;">全屏显示</span>
+          <button type="button" class="theme-switch" id="browserFsToggle" role="switch" aria-checked="false" aria-label="全屏显示"></button>
+        </div>
+
         <div class="settings-group">
           <div class="settings-label">主题颜色</div>
           <div class="accent-row">
@@ -1374,15 +1379,39 @@ body.dark-mode .card.fullscreen{
   });
 
   /* ---------------- 设置菜单 ---------------- */
+  function resetSettingsMenuPosition() {
+    settingsMenu.style.maxHeight = '';
+    settingsMenu.style.overflowY = '';
+  }
+  /* 保持卡片上方弹出；上方空间不足时限制高度，让菜单内部滚动 */
+  function positionSettingsMenu() {
+    if (!settingsMenu.classList.contains('open') || settingsSheetActive) return;
+    settingsMenu.style.maxHeight = '';
+    settingsMenu.style.overflowY = '';
+    var vh = document.documentElement.clientHeight || window.innerHeight;
+    var cardTop = playerCard.getBoundingClientRect().top;
+    /* 菜单底边在卡片上方 8px，顶部再留 8px */
+    var available = Math.min(cardTop - 16, vh - 16);
+    if (available > 0 && settingsMenu.offsetHeight > available) {
+      settingsMenu.style.maxHeight = available + 'px';
+      settingsMenu.style.overflowY = 'auto';
+    }
+  }
   function openSettingsMenu() {
     settingsMenu.classList.add('open');
     settingsBtn.classList.add('active');
+    positionSettingsMenu();
   }
   function closeSettingsMenu() {
     settingsMenu.classList.remove('open');
     settingsBtn.classList.remove('active');
     resetSettingsSheet();
+    resetSettingsMenuPosition();
   }
+  window.addEventListener('resize', positionSettingsMenu);
+  window.addEventListener('orientationchange', function () {
+    setTimeout(positionSettingsMenu, 200);
+  });
   settingsBtn.addEventListener('click', function (e) {
     e.stopPropagation();
     endVolPressSilently();
@@ -1396,6 +1425,58 @@ body.dark-mode .card.fullscreen{
     closeSettingsMenu();
   });
   document.getElementById('closeSettingsBtn').addEventListener('click', closeSettingsMenu);
+
+  /* ---------------- 浏览器全屏 ---------------- */
+  var browserFsToggle = document.getElementById('browserFsToggle');
+
+  function getFullscreenElement() {
+    return document.fullscreenElement ||
+           document.webkitFullscreenElement ||
+           document.mozFullScreenElement ||
+           document.msFullscreenElement || null;
+  }
+  function updateBrowserFsToggle() {
+    browserFsToggle.setAttribute('aria-checked', getFullscreenElement() ? 'true' : 'false');
+  }
+  function requestBrowserFullscreen() {
+    var el = document.documentElement;
+    var fn = el.requestFullscreen || el.webkitRequestFullscreen || el.webkitRequestFullScreen ||
+             el.mozRequestFullScreen || el.msRequestFullscreen;
+    if (!fn) {
+      toast('当前浏览器不支持全屏显示');
+      return;
+    }
+    try {
+      var result = fn.call(el);
+      if (result && result.catch) {
+        result.catch(function () {
+          toast('无法进入全屏');
+          updateBrowserFsToggle();
+        });
+      }
+    } catch (e) {
+      toast('无法进入全屏');
+      updateBrowserFsToggle();
+    }
+  }
+  function exitBrowserFullscreen() {
+    var fn = document.exitFullscreen || document.webkitExitFullscreen ||
+             document.webkitCancelFullScreen || document.mozCancelFullScreen ||
+             document.msExitFullscreen;
+    if (!fn) return;
+    try {
+      var result = fn.call(document);
+      if (result && result.catch) result.catch(function () {});
+    } catch (e) {}
+  }
+  browserFsToggle.addEventListener('click', function () {
+    if (getFullscreenElement()) exitBrowserFullscreen();
+    else requestBrowserFullscreen();
+  });
+  ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(function (evt) {
+    document.addEventListener(evt, updateBrowserFsToggle);
+  });
+  updateBrowserFsToggle();
 
   var aboutBtn = document.getElementById('aboutBtn');
   var infoOverlay = document.getElementById('infoOverlay');
@@ -1484,6 +1565,7 @@ body.dark-mode .card.fullscreen{
     settingsMenu.style.maxHeight = '';
     settingsMenu.style.overflowY = '';
     settingsMenu.style.zIndex = '';
+    positionSettingsMenu();
   }
   /* 等本次点击/触摸结束、键盘开始弹出后再切换成固定面板，
      避免菜单在手指抬起前移动导致点击落空或设置菜单被误关闭 */

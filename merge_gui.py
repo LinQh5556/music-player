@@ -31,15 +31,17 @@ LOG_BG = "#ffffff"
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 SORT_OPTIONS = [("按音轨号（缺失时按文件名）", "track"), ("按文件名", "filename")]
-CHAPTER_OPTIONS = [("ID3 标题（缺失时用文件名）", "metadata"), ("文件名", "filename")]
+CHAPTER_OPTIONS = [("元数据标题（缺失时用文件名）", "metadata"), ("文件名", "filename")]
 NORMALIZE_OPTIONS = [
     ("自动（参数不一致时才归一化）", "auto"),
     ("总是归一化", "always"),
     ("从不（直接流复制）", "never"),
 ]
+FORMAT_OPTIONS = [("MP3 + FLAC", "mp3,flac"), ("仅 MP3", "mp3"), ("仅 FLAC", "flac")]
 SORT_MAP = dict(SORT_OPTIONS)
 CHAPTER_MAP = dict(CHAPTER_OPTIONS)
 NORMALIZE_MAP = dict(NORMALIZE_OPTIONS)
+FORMAT_MAP = dict(FORMAT_OPTIONS)
 
 
 def make_dpi_aware():
@@ -57,9 +59,9 @@ class App(tk.Tk):
         super().__init__()
         self.title("MP3 专辑合并工具")
         self.configure(bg=BG)
-        self.minsize(640, 540)
+        self.minsize(640, 580)
 
-        win_w, win_h = 700, 620
+        win_w, win_h = 700, 655
         self.update_idletasks()
         x = (self.winfo_screenwidth() - win_w) // 2
         y = max(0, (self.winfo_screenheight() - win_h) // 3)
@@ -102,7 +104,7 @@ class App(tk.Tk):
         head = tk.Frame(content, bg=BG)
         head.pack(fill="x", pady=(0, 12))
         tk.Label(head, text="MP3 专辑合并", bg=BG, fg=FG, font=self.f_title).pack(anchor="w")
-        tk.Label(head, text="把一个文件夹里的多个 MP3 合并为一个带章节的单文件",
+        tk.Label(head, text="把一个文件夹里的多个 MP3 / FLAC 合并为一个带章节的 MP3",
                  bg=BG, fg=MUTED, font=self.f_body).pack(anchor="w", pady=(2, 0))
 
         form = tk.Frame(content, bg=BG)
@@ -159,9 +161,18 @@ class App(tk.Tk):
         self.adv_link.grid(row=4, column=2, columnspan=2, sticky="w", padx=(12, 0))
         self.adv_link.bind("<Button-1>", lambda e: self.toggle_advanced())
 
+        # 文件格式
+        self.format_var = tk.StringVar(value=FORMAT_OPTIONS[0][0])
+        rlabel(5, "文件格式")
+        ttk.Combobox(form, textvariable=self.format_var, values=[o[0] for o in FORMAT_OPTIONS],
+                     state="readonly").grid(row=5, column=1, sticky="ew", pady=4)
+        tk.Label(form, text="FLAC 会先转码为 MP3", bg=BG, fg=MUTED,
+                 font=self.f_small).grid(row=5, column=2, columnspan=2, sticky="w", padx=(12, 0))
+        self.format_var.trace_add("write", self._update_count)
+
         # 归一化参数（默认收起）
         self.adv = tk.Frame(form, bg=BG)
-        self.adv.grid(row=5, column=0, columnspan=6, sticky="ew", padx=(36, 0), pady=(0, 4))
+        self.adv.grid(row=6, column=0, columnspan=6, sticky="ew", padx=(36, 0), pady=(0, 4))
         self.bitrate_var = tk.StringVar()
         self.sr_var = tk.StringVar()
         self.ch_var = tk.StringVar()
@@ -259,14 +270,24 @@ class App(tk.Tk):
 
     def _update_count(self, *_):
         folder = self.folder_var.get().strip()
-        n = 0
-        if folder and Path(folder).is_dir():
-            try:
-                n = sum(1 for p in Path(folder).iterdir()
-                        if p.is_file() and p.suffix.lower() == ".mp3")
-            except OSError:
-                n = 0
-        self.mp3_count.config(text=f"共 {n} 个 MP3" if folder else "")
+        if not folder or not Path(folder).is_dir():
+            self.mp3_count.config(text="")
+            return
+        try:
+            files = [p for p in Path(folder).iterdir() if p.is_file()]
+        except OSError:
+            files = []
+        fmts = FORMAT_MAP[self.format_var.get()].split(",")
+        counts = {ext: sum(1 for p in files if p.suffix.lower() == ext)
+                  for ext in (".mp3", ".flac")}
+        n = sum(counts[ext] for ext in fmts)
+        parts = []
+        if ".mp3" in fmts and counts[".mp3"]:
+            parts.append(f"MP3 {counts['.mp3']}")
+        if ".flac" in fmts and counts[".flac"]:
+            parts.append(f"FLAC {counts['.flac']}")
+        detail = "（" + " / ".join(parts) + "）" if parts else ""
+        self.mp3_count.config(text=f"共 {n} 个音频{detail}")
 
     def toggle_advanced(self, event=None):
         self.advanced_shown = not self.advanced_shown
@@ -295,11 +316,12 @@ class App(tk.Tk):
             messagebox.showwarning("提示", "文件夹不存在：\n" + folder, parent=self)
             return
         try:
-            has_mp3 = any(p.is_file() and p.suffix.lower() == ".mp3" for p in folder_path.iterdir())
+            fmts = {"." + e.strip().lower() for e in FORMAT_MAP[self.format_var.get()].split(",")}
+            has_audio = any(p.is_file() and p.suffix.lower() in fmts for p in folder_path.iterdir())
         except OSError:
-            has_mp3 = False
-        if not has_mp3:
-            messagebox.showwarning("提示", "所选文件夹下没有找到 MP3 文件", parent=self)
+            has_audio = False
+        if not has_audio:
+            messagebox.showwarning("提示", "所选文件夹下没有找到音频文件（MP3/FLAC）", parent=self)
             return
 
         output = self.out_var.get().strip()
@@ -330,6 +352,7 @@ class App(tk.Tk):
         norm_key = NORMALIZE_MAP[self.norm_var.get()]
         cmd = [sys.executable, MERGE_SCRIPT, str(folder_path), output,
                "--title", title,
+               "--formats", FORMAT_MAP[self.format_var.get()],
                "--sort-by", SORT_MAP[self.sort_var.get()],
                "--chapter-title-source", CHAPTER_MAP[self.chapter_var.get()],
                "--normalize", norm_key]

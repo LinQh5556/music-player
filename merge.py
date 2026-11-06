@@ -7,39 +7,73 @@ import tempfile
 from pathlib import Path
 
 from mutagen.mp3 import MP3
+from mutagen.flac import FLAC
 from mutagen.id3 import ID3, SYLT, Encoding
 
 
-# ---------------- 原有：ID3 读取 ----------------
+# ---------------- 音频信息读取（MP3 / FLAC） ----------------
 
-def read_title_tag(mp3_path: Path) -> str:
-    try:
-        audio = MP3(mp3_path)
-        if audio.tags is None:
-            return ""
-        tit2 = audio.tags.get("TIT2")
-        return str(tit2) if tit2 else ""
-    except Exception:
-        return ""
+_INFO_CACHE = {}
 
 
-def read_track_tag(mp3_path: Path):
-    try:
-        audio = MP3(mp3_path)
-        if audio.tags is None:
-            return None
-        trck = audio.tags.get("TRCK")
-        if not trck:
-            return None
-        num_part = str(trck).split("/")[0].strip()
-        return int(num_part) if num_part.isdigit() else None
-    except Exception:
+def _parse_track_number(value):
+    if not value:
         return None
+    num_part = str(value).split("/")[0].strip()
+    return int(num_part) if num_part.isdigit() else None
+
+
+def _load_info(path: Path):
+    """读取标题、音轨号、时长和编码参数；读取失败返回 None。
+
+    MP3 读 ID3 的 TIT2/TRCK；FLAC 读 Vorbis 注释的 title/tracknumber。
+    params 为 (采样率, 声道数, 比特率kbps)，FLAC 为无损，不记录比特率（None）。
+    """
+    key = str(path)
+    if key in _INFO_CACHE:
+        return _INFO_CACHE[key]
+    info = None
+    try:
+        if path.suffix.lower() == ".flac":
+            flac = FLAC(path)
+            titles = flac.get("title")
+            numbers = flac.get("tracknumber")
+            info = {
+                "title": str(titles[0]) if titles else "",
+                "track": _parse_track_number(numbers[0]) if numbers else None,
+                "duration_ms": int(flac.info.length * 1000),
+                "params": (flac.info.sample_rate, flac.info.channels, None),
+            }
+        else:
+            audio = MP3(path)
+            tit2 = audio.tags.get("TIT2") if audio.tags else None
+            trck = audio.tags.get("TRCK") if audio.tags else None
+            info = {
+                "title": str(tit2) if tit2 else "",
+                "track": _parse_track_number(trck),
+                "duration_ms": int(audio.info.length * 1000),
+                "params": (audio.info.sample_rate, audio.info.channels,
+                           int(audio.info.bitrate // 1000)),
+            }
+    except Exception:
+        info = None
+    _INFO_CACHE[key] = info
+    return info
+
+
+def read_title_tag(path: Path) -> str:
+    info = _load_info(path)
+    return info["title"] if info else ""
+
+
+def read_track_tag(path: Path):
+    info = _load_info(path)
+    return info["track"] if info else None
 
 
 def sort_key_by_metadata(path: Path, source: str = "track"):
     """排序依据。
-    source="track"   ：优先 ID3 音轨号 TRCK，缺失时按文件名；
+    source="track"   ：优先音轨号（MP3 TRCK / FLAC TRACKNUMBER），缺失时按文件名；
     source="filename"：始终按文件名（不区分大小写）。
     """
     if source == "filename":
@@ -52,8 +86,8 @@ def sort_key_by_metadata(path: Path, source: str = "track"):
 
 def chapter_title_of(path: Path, source: str = "metadata") -> str:
     """返回章节标题。
-    source="metadata"：优先用 ID3 标题，缺失时回退文件名；
-    source="filename"：始终用文件名（去掉 .mp3 后缀）。
+    source="metadata"：优先用元数据标题（MP3 TIT2 / FLAC TITLE），缺失时回退文件名；
+    source="filename"：始终用文件名（去掉扩展名）。
     """
     if source == "filename":
         return path.stem
@@ -61,13 +95,12 @@ def chapter_title_of(path: Path, source: str = "metadata") -> str:
     return title if title else path.stem
 
 
-def get_mp3_duration_ms(file_path: Path) -> int:
-    try:
-        audio = MP3(file_path)
-        return int(audio.info.length * 1000)
-    except Exception as e:
-        print(f"错误：无法读取 {file_path} 的时长 - {e}")
+def get_duration_ms(file_path: Path) -> int:
+    info = _load_info(file_path)
+    if info is None:
+        print(f"错误：无法读取 {file_path.name} 的时长")
         sys.exit(1)
+    return info["duration_ms"]
 
 
 def generate_ffmetadata(chapters, output_path: Path, album_title="合辑"):
@@ -87,10 +120,10 @@ def generate_ffmetadata(chapters, output_path: Path, album_title="合辑"):
     output_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def generate_concat_list(mp3_files, output_path: Path):
+def generate_concat_list(audio_files, output_path: Path):
     def escape(p: Path) -> str:
         return p.as_posix().replace("'", "'\\''")
-    lines = [f"file '{escape(f)}'" for f in mp3_files]
+    lines = [f"file '{escape(f)}'" for f in audio_files]
     output_path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -112,39 +145,55 @@ def run_ffmpeg(cmd, check=True):
 
 def get_audio_params(path: Path):
     """返回 (sample_rate, channels, bitrate_kbps)；失败返回 None。"""
-    try:
-        audio = MP3(path)
-        info = audio.info
-        return (info.sample_rate, info.channels, int(info.bitrate // 1000))
-    except Exception:
-        return None
+    info = _load_info(path)
+    return info["params"] if info else None
 
 
-def needs_normalization(mp3_files) -> bool:
+def needs_normalization(audio_files) -> bool:
     """检查所有文件的 (采样率, 声道数, 平均比特率) 是否一致。"""
-    params = [get_audio_params(p) for p in mp3_files]
+    params = [get_audio_params(p) for p in audio_files]
     if any(p is None for p in params):
         print("  警告：部分文件无法读取音频参数，将强制归一化")
         return True
     first = params[0]
-    for p, param in zip(mp3_files[1:], params[1:]):
+    for p, param in zip(audio_files[1:], params[1:]):
         if param != first:
             return True
     return False
 
 
-def infer_normalize_params(mp3_files):
+def infer_normalize_params(audio_files):
     """根据源文件推断归一化目标参数，返回 (bitrate_str, sample_rate, channels)。
-    取各维度的最大值，保证不低于任何源文件。
+    采样率/声道数取各源文件最大值；比特率取 MP3 源文件最大值，
+    包含 FLAC 时默认按 320k 转码（FLAC 为无损，不记录比特率）。
     """
-    params = [get_audio_params(p) for p in mp3_files]
+    params = [get_audio_params(p) for p in audio_files]
     params = [p for p in params if p is not None]
+    has_flac = any(p.suffix.lower() == ".flac" for p in audio_files)
+    bitrates = [p[2] for p in params if p[2]]
+    if has_flac:
+        bitrate = "320k"
+    elif bitrates:
+        bitrate = f"{max(bitrates)}k"
+    else:
+        bitrate = "192k"
     if not params:
-        return ("192k", 44100, 2)
+        return (bitrate, 44100, 2)
     max_sr = max(p[0] for p in params)
     max_ch = max(p[1] for p in params)
-    max_br = max(p[2] for p in params)
-    return (f"{max_br}k", max_sr, max_ch)
+    return (bitrate, max_sr, max_ch)
+
+
+# MP3（libmp3lame）支持的采样率和最大声道数
+MP3_SAMPLE_RATES = (8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000)
+
+
+def clamp_mp3_sample_rate(rate: int) -> int:
+    """把采样率夹到 MP3 支持的最近档位（向下取）。"""
+    if rate in MP3_SAMPLE_RATES:
+        return rate
+    lower = [r for r in MP3_SAMPLE_RATES if r < rate]
+    return max(lower) if lower else min(MP3_SAMPLE_RATES)
 
 
 def normalize_file(src: Path, dst: Path, bitrate: str,
@@ -171,13 +220,13 @@ def normalize_file(src: Path, dst: Path, bitrate: str,
         raise
 
 
-def normalize_all(mp3_files, temp_dir: Path, bitrate: str,
+def normalize_all(audio_files, temp_dir: Path, bitrate: str,
                   sample_rate: int, channels: int, codec: str):
     """把所有文件重新编码到 temp_dir，返回新路径列表（顺序与输入一致）。"""
     normalized = []
-    total = len(mp3_files)
-    for idx, src in enumerate(mp3_files, 1):
-        dst = temp_dir / f"{idx:04d}_{src.name}"
+    total = len(audio_files)
+    for idx, src in enumerate(audio_files, 1):
+        dst = temp_dir / f"{idx:04d}_{src.name}.mp3"
         print(f"  归一化 {idx}/{total}: {src.name}")
         normalize_file(src, dst, bitrate, sample_rate, channels, codec)
         normalized.append(dst)
@@ -277,19 +326,19 @@ def extract_lyrics(mp3_path: Path):
     return None
 
 
-def build_sylt_data(mp3_files, chapters, with_markers=False):
+def build_sylt_data(audio_files, chapters, with_markers=False):
     """把每首歌的歌词按章节起始时间偏移，拼成一条完整时间轴。"""
     all_data = []
-    for mp3_path, (title, start_ms, _end_ms) in zip(mp3_files, chapters):
-        lyrics = extract_lyrics(mp3_path)
+    for audio_path, (title, start_ms, _end_ms) in zip(audio_files, chapters):
+        lyrics = extract_lyrics(audio_path)
         if not lyrics:
-            print(f"  跳过（无带时间戳的歌词）：{mp3_path.name}")
+            print(f"  跳过（无带时间戳的歌词）：{audio_path.name}")
             continue
         if with_markers:
             all_data.append((f"--- {title} ---", start_ms))
         for text, rel_ms in lyrics:
             all_data.append((text, start_ms + rel_ms))
-        print(f"  已合并歌词：{mp3_path.name} -> {len(lyrics)} 行，偏移 +{start_ms} ms")
+        print(f"  已合并歌词：{audio_path.name} -> {len(lyrics)} 行，偏移 +{start_ms} ms")
     return all_data
 
 
@@ -327,8 +376,9 @@ def write_sylt_to_output(output_path: Path, sylt_data, lang="chi"):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="把文件夹下的 MP3 排序后合并为一个带章节帧的 MP3，"
+        description="把文件夹下的 MP3/FLAC 排序后合并为一个带章节帧的 MP3，"
                     "并可选地把每首歌的歌词按章节时间偏移合并成一条 SYLT 同步歌词。"
+                    "包含 FLAC 时会先转码为 MP3（章节写入 ID3 CHAP，网页播放器可直接识别）；"
                     "合并前可自动统一源文件的编码参数，避免比特率/采样率不一致导致合并失败。",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""示例：
@@ -341,11 +391,14 @@ def parse_args():
   python merge.py ./music 合辑.mp3 --normalize always --normalize-bitrate 128k
   python merge.py ./music 合辑.mp3 --normalize never
   python merge.py ./music 合辑.mp3 --normalize always --normalize-channels 1 --normalize-bitrate 96k
+  python merge.py D:\\flacdir 合辑.mp3 --formats flac
 """
     )
-    parser.add_argument("folder", help="要扫描 MP3 的文件夹路径")
+    parser.add_argument("folder", help="要扫描音频文件的文件夹路径")
     parser.add_argument("output", help="输出文件名；不带 .mp3 后缀会自动补上")
     parser.add_argument("--title", default="合辑", help="合并后文件的全局标题（默认：合辑）")
+    parser.add_argument("--formats", default="mp3,flac",
+                        help="参与合并的音频格式，逗号分隔（默认 mp3,flac）")
     parser.add_argument("--lyrics-lang", default="chi",
                         help="写入 SYLT 的语言代码（ISO-639-2，默认 chi）")
     parser.add_argument("--chapter-markers", action="store_true",
@@ -356,14 +409,14 @@ def parse_args():
         "--chapter-title-source",
         choices=["metadata", "filename"],
         default="metadata",
-        help="章节标题命名来源：metadata=ID3 标题（默认，缺失时回退文件名），"
-             "filename=文件名（去 .mp3 后缀）"
+        help="章节标题命名来源：metadata=元数据标题（MP3 TIT2 / FLAC TITLE，默认，缺失时回退文件名），"
+             "filename=文件名（去扩展名）"
     )
     parser.add_argument(
         "--sort-by",
         choices=["track", "filename"],
         default="track",
-        help="合并排序方式：track=ID3 音轨号优先（默认，缺失时按文件名），"
+        help="合并排序方式：track=音轨号优先（MP3 TRCK / FLAC TRACKNUMBER，默认，缺失时按文件名），"
              "filename=始终按文件名"
     )
     parser.add_argument(
@@ -411,34 +464,41 @@ def main():
         print(f"错误：输出目录不存在 -> {output_path.parent}")
         sys.exit(1)
 
-    mp3_files = [
+    formats = {"." + s.strip().lower().lstrip(".") for s in args.formats.split(",") if s.strip()}
+    if not formats:
+        formats = {".mp3", ".flac"}
+
+    audio_files = [
         p for p in folder.iterdir()
         if p.is_file()
-        and p.suffix.lower() == ".mp3"
+        and p.suffix.lower() in formats
         and p.resolve() != output_path
     ]
 
-    if not mp3_files:
-        print(f"错误：在 {folder} 下没有找到 MP3 文件")
+    if not audio_files:
+        print(f"错误：在 {folder} 下没有找到音频文件（{', '.join(sorted(formats))}）")
         sys.exit(1)
 
-    mp3_files.sort(key=lambda p: sort_key_by_metadata(p, args.sort_by))
+    audio_files.sort(key=lambda p: sort_key_by_metadata(p, args.sort_by))
+    has_flac = any(p.suffix.lower() == ".flac" for p in audio_files)
 
     print(f"\n文件夹: {folder}")
     print(f"输出文件: {output_path}")
+    print(f"音频格式: {', '.join(ext.lstrip('.').upper() for ext in sorted(formats))}")
     print(f"排序方式: {args.sort_by}")
     print(f"章节标题来源: {args.chapter_title_source}")
     if args.sort_by == "filename":
         print("将按以下顺序合并（按文件名）：")
     else:
-        print("将按以下顺序合并（依据 ID3 音轨号，缺失时按文件名）：")
-    for i, p in enumerate(mp3_files, 1):
+        print("将按以下顺序合并（依据音轨号，缺失时按文件名）：")
+    for i, p in enumerate(audio_files, 1):
         track = read_track_tag(p)
+        kind = "FLAC" if p.suffix.lower() == ".flac" else "MP3"
         if args.sort_by == "filename":
             source = "按文件名"
         else:
             source = f"音轨号 {track}" if track is not None else "无音轨号，按文件名"
-        print(f"  {i}. {p.name}  [{source}]  -> 章节名: "
+        print(f"  {i}. {p.name}  [{kind} / {source}]  -> 章节名: "
               f"{chapter_title_of(p, args.chapter_title_source)}")
 
     temp_dir = None
@@ -446,32 +506,46 @@ def main():
     concat_list_path = folder / "concat_list_temp.txt"
 
     try:
-        # ---- 决定是否归一化 ----
+        # ---- 决定是否归一化（包含 FLAC 时必须转码为 MP3） ----
         if args.normalize == "always":
             use_normalize = True
         elif args.normalize == "never":
-            use_normalize = False
+            if has_flac:
+                print("\n警告：包含 FLAC 文件，无法直接流复制合并，已改为转码。")
+                use_normalize = True
+            else:
+                use_normalize = False
         else:
-            use_normalize = needs_normalization(mp3_files)
+            use_normalize = has_flac or needs_normalization(audio_files)
 
         if use_normalize:
-            inferred_br, inferred_sr, inferred_ch = infer_normalize_params(mp3_files)
+            inferred_br, inferred_sr, inferred_ch = infer_normalize_params(audio_files)
             bitrate = args.normalize_bitrate or inferred_br
             sample_rate = args.normalize_sample_rate or inferred_sr
             channels = args.normalize_channels or inferred_ch
 
+            clamped_rate = clamp_mp3_sample_rate(sample_rate)
+            if clamped_rate != sample_rate:
+                print(f"  警告：MP3 不支持 {sample_rate}Hz 采样率，已改为 {clamped_rate}Hz")
+                sample_rate = clamped_rate
+            if channels > 2:
+                print(f"  警告：MP3 最多支持 2 声道，已把 {channels} 声道改为 2")
+                channels = 2
+
             print(f"\n统一编码参数：{bitrate} / "
                   f"{sample_rate}Hz / {channels}ch / {args.normalize_codec}")
             if args.normalize_bitrate is None:
-                print(f"  （比特率自动取源文件最大值：{bitrate}）")
+                print(f"  （比特率自动确定：{bitrate}）")
             if args.normalize_sample_rate is None:
                 print(f"  （采样率自动取源文件最大值：{sample_rate}Hz）")
             if args.normalize_channels is None:
                 print(f"  （声道数自动取源文件最大值：{channels}）")
+            if has_flac:
+                print("  （包含 FLAC：全部转码为 MP3，章节写入 ID3 CHAP）")
 
             temp_dir = Path(tempfile.mkdtemp(prefix="mp3_merge_norm_"))
             merge_files = normalize_all(
-                mp3_files, temp_dir,
+                audio_files, temp_dir,
                 bitrate=bitrate,
                 sample_rate=sample_rate,
                 channels=channels,
@@ -479,13 +553,13 @@ def main():
             )
         else:
             print("\n源文件编码参数一致，直接流复制合并。")
-            merge_files = mp3_files
+            merge_files = audio_files
 
         # ---- 计算章节（基于实际参与合并的文件时长） ----
         chapters = []
         current_start = 0
-        for src_path, merge_path in zip(mp3_files, merge_files):
-            duration_ms = get_mp3_duration_ms(merge_path)
+        for src_path, merge_path in zip(audio_files, merge_files):
+            duration_ms = get_duration_ms(merge_path)
             current_end = current_start + duration_ms
             chapters.append((
                 chapter_title_of(src_path, args.chapter_title_source),
@@ -524,7 +598,7 @@ def main():
         if args.no_lyrics:
             return
         print("\n正在处理歌词（SYLT）...")
-        sylt_data = build_sylt_data(mp3_files, chapters,
+        sylt_data = build_sylt_data(audio_files, chapters,
                                     with_markers=args.chapter_markers)
         write_sylt_to_output(output_path, sylt_data, lang=args.lyrics_lang)
     finally:
